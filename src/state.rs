@@ -1,6 +1,6 @@
 use crate::{server::{Server, Peer}, packet::Packet};
 
-pub(crate) trait State : Send
+pub(crate) trait State : Send + Sync
 {
     fn tick(&self, server: &mut Server) {}
 
