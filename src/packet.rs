@@ -156,7 +156,6 @@ impl Packet
     pub fn new(t: PacketType) -> Packet
     {
         let mut pack = Packet { buffer: Vec::new(), position: 3 };
-        pack.wu8(0); // Size
         pack.wu8(0); // Passtrough
         pack.wpk(t); // Type
 
@@ -434,8 +433,10 @@ impl Packet
 
     pub fn buf(&mut self) -> &[u8]
     {
-        self.buffer[0] = (self.buffer.len() - 1) as u8; // Set final length
+        self.buffer.insert(0, 0);
+        self.position += 1; // move by one
 
+        self.buffer[0] = (self.buffer.len() - 1) as u8; // Set final length
         &self.buffer
     }
 

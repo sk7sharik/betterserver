@@ -7,7 +7,8 @@ mod states;
 
 fn main() 
 {
-    let server = Server::start("0.0.0.0:7606");
+    log4rs::init_file("logging_config.yaml", Default::default()).unwrap();
 
+    let server = Server::start("0.0.0.0:7606");
     loop{}
 }

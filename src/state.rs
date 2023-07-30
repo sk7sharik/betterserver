@@ -1,10 +1,12 @@
+use std::sync::{Arc, Mutex};
+
 use crate::{server::{Server, Peer}, packet::Packet};
 
 pub(crate) trait State : Send + Sync
 {
-    fn tick(&self, server: &mut Server) {}
+    fn tick(&mut self, _server: &mut Server) {}
 
-    fn connect(&self, server: &mut Server, peer: &mut Peer) {}
-    fn disconnect(&self, server: &mut Server, peer: &mut Peer) {}
-    fn got_tcp_packet(&self, server: &mut Server, peer: &mut Peer, packet: &mut Packet) {}
+    fn connect(&mut self, _server: &mut Server, _peer: Arc<Mutex<Peer>>) {}
+    fn disconnect(&mut self, _server: &mut Server, _peer: Arc<Mutex<Peer>>) {}
+    fn got_tcp_packet(&mut self, _server: &mut Server, _peer: Arc<Mutex<Peer>>, _packet: &mut Packet) {}
 }
