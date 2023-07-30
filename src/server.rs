@@ -9,6 +9,7 @@ use std::thread;
 use std::time::Duration;
 
 use log::{trace, debug, info, warn};
+use rand::{thread_rng, Rng};
 
 use crate::packet::PacketType;
 use crate::states::lobby::Lobby;
@@ -35,6 +36,7 @@ impl Server {
             listener: Arc::new(Mutex::new(TcpListener::bind(addr).unwrap())), 
             id_count: Arc::new(Mutex::new(Wrapping(0)))
         }));
+        server.lock().unwrap().set_state(Box::new(Lobby::new()));
 
         // Tick thread
         let server_clone = server.clone();
@@ -99,11 +101,13 @@ impl Server {
                 stream: stream_clone, 
                 addr, 
                 nickname: String::new(),
-                udid: String::new(), 
+                udid: String::new(),
+                exe_chance: thread_rng().gen_range(0..5),
                 timer: 0, 
                 lobby_icon: 0, 
                 pet: 0,
                 pending: true,
+                in_queue: false,
                 ready: false
             };
 
@@ -228,6 +232,13 @@ impl Server {
         }
     }
 
+    pub fn set_state(&mut self, state: Box<dyn State>) {
+        info!("Server state is now {}", state.name());
+        let c_state = self.state.clone();
+        *c_state.lock().unwrap() = state;
+        c_state.lock().unwrap().init(self);
+    }
+
     fn connected(server: &mut Server, state: &mut Box<dyn State>, peer: Arc<Mutex<Peer>>) 
     {
         state.connect(server, peer);
@@ -252,6 +263,8 @@ pub(crate) struct Peer {
     pub pet: i8,
     pub pending: bool,
     pub ready: bool,
+    pub in_queue: bool,
+    pub exe_chance: u8,
 
     id: u16,
 

@@ -1,25 +1,59 @@
 use std::sync::{Mutex, Arc};
-
 use log::{debug, info};
-
+use rand::{thread_rng, Rng};
 use crate::{state::State, server::{Server, Peer}, packet::{Packet, PacketType, self}};
+
+use super::mapvote::MapVote;
 
 const BUILD_VER: u16 = 100;
 
 pub(crate) struct Lobby
 {
-    timer: u8
+    heartbeat_timer: u8,
+    countdown: bool,
+    countdown_timer: u16,
 }
 
 impl State for Lobby
 {
+    fn init(&mut self, server: &mut Server) 
+    {
+        for peer in server.peers.write().unwrap().values_mut() {
+            let mut peer = peer.lock().unwrap();
+
+            if peer.in_queue {
+                let mut packet = Packet::new(PacketType::SERVER_IDENTITY_RESPONSE);
+                packet.wu8(true as u8);
+                packet.wu16(peer.id());
+                peer.send(&mut packet);
+
+                peer.in_queue = false;
+            }
+            else {
+                let mut packet = Packet::new(PacketType::SERVER_GAME_BACK_TO_LOBBY);
+                peer.send(&mut packet);
+            }
+
+            peer.exe_chance += thread_rng().gen_range(2..10);
+            if peer.exe_chance > 99 {
+                peer.exe_chance = 99;
+            }
+
+            // Send new exe chance
+            let mut packet = Packet::new(PacketType::SERVER_LOBBY_EXE_CHANCE);
+            packet.wu8(peer.exe_chance);
+            peer.send(&mut packet);
+        }
+    }
+
     fn tick(&mut self, server: &mut Server) 
     {
         if server.peers.read().unwrap().len() <= 0 {
             return;
         }
 
-        if self.timer >= 60 {
+        self.heartbeat_timer += 1;
+        if self.heartbeat_timer >= 60 {
             for peer in server.peers.write().unwrap().iter_mut() {
                 let mut peer = peer.1.lock().unwrap();
 
@@ -39,11 +73,27 @@ impl State for Lobby
             // Heartbeat
             server.multicast(&mut Packet::new(PacketType::SERVER_HEARTBEAT));
 
-            self.timer = 0;
+            self.heartbeat_timer = 0;
             debug!("Heartbeat + Check");
         }
 
-        self.timer += 1
+        // Handle countdown
+        if self.countdown {
+            self.countdown_timer -= 1;
+
+            // Set state to map vote
+            if self.countdown_timer <= 0 {
+                server.set_state(Box::new(MapVote::new()));
+                return;
+            }
+
+            if self.countdown_timer % 60 == 0 {
+                let mut packet = Packet::new(PacketType::SERVER_LOBBY_COUNTDOWN);
+                packet.wu8(self.countdown as u8);
+                packet.wu8((self.countdown_timer / 60) as u8);
+                server.multicast(&mut packet);
+            }
+        }
     }
 
     fn got_tcp_packet(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>, packet: &mut Packet) 
@@ -68,8 +118,15 @@ impl State for Lobby
                     return;
                 }
 
-                peer.pending = false; // now he isnt pending
-                peer.nickname = packet.rstr();
+                let nickname = packet.rstr();
+
+                if nickname.len() > 15 {
+                    peer.nickname = nickname[..16].to_string();
+                }
+                else {
+                    peer.nickname = nickname;
+                }
+
                 peer.lobby_icon = packet.ru8();
                 peer.pet = packet.ri8();
                 let os_type = packet.ru8();
@@ -119,6 +176,7 @@ impl State for Lobby
                 server.multicast_except(&mut packet, id);
 
                 peer.lock().unwrap().ready = ready;
+                self.check_ready(server);
             },
 
             // Peer's chat message
@@ -150,6 +208,7 @@ impl State for Lobby
         let mut packet = Packet::new(PacketType::SERVER_PLAYER_JOINED);
         packet.wu16(id);
         server.multicast_except(&mut packet, id);
+        self.check_ready(server);
     }
 
     fn disconnect(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>) 
@@ -158,15 +217,20 @@ impl State for Lobby
         let mut packet = Packet::new(PacketType::SERVER_PLAYER_LEFT);
         packet.wu16(id);
         server.multicast_except(&mut packet, id);
+        self.check_ready(server);
     }
 
+
+    fn name(&self) -> &str {
+        "Lobby"
+    }
 }
 
 impl Lobby
 {
     pub fn new() -> Lobby 
     {
-        Lobby { timer: 0 }
+        Lobby { heartbeat_timer: 0, countdown: false, countdown_timer: 0 }
     }
 
     fn share_player(&mut self, server: &mut Server, peer: &mut Peer) 
@@ -190,6 +254,8 @@ impl Lobby
         let mut packet = Packet::new(PacketType::SERVER_LOBBY_EXE_CHANCE);
         packet.wu8(1);
         peer.send(&mut packet);
+
+        peer.pending = false;
     }
 
     fn send_message(&mut self, peer: &mut Peer, message: &str)
@@ -205,6 +271,38 @@ impl Lobby
         let mut packet = Packet::new(PacketType::CLIENT_CHAT_MESSAGE);
         packet.wu16(0);
         packet.wstr(message);
+        server.multicast(&mut packet);
+    }
+
+    fn check_ready(&mut self, server: &mut Server) 
+    {
+        {
+            let peers = server.peers.read().unwrap();
+            let count = peers.len();
+            if count == 1 {
+                return;
+            }
+
+            let mut ready_count = 0;
+            for i in peers.values() {
+                let peer = i.lock().unwrap();
+
+                if peer.ready {
+                    ready_count += 1;
+                }
+            }
+
+            if ready_count == count {
+                self.countdown = true;
+                self.countdown_timer = 60 * 5;
+            } else {
+                self.countdown = false;
+            }
+        }
+
+        let mut packet = Packet::new(PacketType::SERVER_LOBBY_COUNTDOWN);
+        packet.wu8(self.countdown as u8);
+        packet.wu8((self.countdown_timer / 60) as u8);
         server.multicast(&mut packet);
     }
 }
