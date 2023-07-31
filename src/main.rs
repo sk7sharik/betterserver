@@ -2,6 +2,8 @@ use server::Server;
 
 mod packet;
 mod server;
+mod map;
+mod maps;
 mod state;
 mod states;
 

@@ -431,13 +431,11 @@ impl Packet
         str
     }
 
-    pub fn buf(&mut self) -> &[u8]
+    pub fn buf(&self) -> Vec<u8>
     {
-        self.buffer.insert(0, 0);
-        self.position += 1; // move by one
-
-        self.buffer[0] = (self.buffer.len() - 1) as u8; // Set final length
-        &self.buffer
+        let mut buffer = self.buffer.clone();
+        buffer.insert(0, (self.buffer.len()) as u8);
+        buffer
     }
 
 }

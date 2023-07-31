@@ -1,4 +1,3 @@
-use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream, SocketAddr};
@@ -17,13 +16,57 @@ use crate::states::lobby::Lobby;
 use super::packet::Packet;
 use super::state::State;
 
+macro_rules! check_state {
+    ($next_state: expr, $server: expr) => {
+        if $next_state.is_some() {
+            let mut state = $next_state.unwrap();
+            let next_state = state.init($server);
+
+            if next_state.is_some() {
+                *$server.state.lock().unwrap() = next_state.unwrap();
+            }
+            else {
+                *$server.state.lock().unwrap() = state;
+            }
+        }
+    };
+}
+
+// Peers that aren't in queue
+macro_rules! real_peers {
+    ($server: expr) => {
+        $server.peers.read().unwrap().values().filter(|x| !x.lock().unwrap().in_queue)
+    };
+}
+
+macro_rules! real_peers_mut {
+    ($server: expr) => {
+        $server.peers.write().unwrap().values().filter(|x| !x.lock().unwrap().in_queue)
+    };
+}
+
+macro_rules! assert_or_disconnect {
+    ($expr: expr, $peer: expr) => {
+        if (!$expr) {
+            $peer.disconnect("Assertion failed.");
+            return None;
+        }
+    };
+}
+
+pub(crate) use real_peers;
+pub(crate) use real_peers_mut;
+pub(crate) use assert_or_disconnect;
+
+
 pub(crate) struct Server
 {
     pub peers: Arc<RwLock<HashMap<u16, Arc<Mutex<Peer>>>>>,
     pub state: Arc<Mutex<Box<dyn State>>>,
 
     listener: Arc<Mutex<TcpListener>>,
-    id_count: Arc<Mutex<Wrapping<u16>>>
+    id_count: Arc<Mutex<Wrapping<u16>>>,
+    next_state: Arc<Mutex<Option<Mutex<Box<Box<dyn State + 'static>>>>>>
 }
 
 impl Server {
@@ -34,9 +77,9 @@ impl Server {
             state: Arc::new(Mutex::new(Box::new(Lobby::new()))), // Default state - Lobby
 
             listener: Arc::new(Mutex::new(TcpListener::bind(addr).unwrap())), 
-            id_count: Arc::new(Mutex::new(Wrapping(0)))
+            id_count: Arc::new(Mutex::new(Wrapping(0))),
+            next_state: Arc::new(Mutex::new(None))
         }));
-        server.lock().unwrap().set_state(Box::new(Lobby::new()));
 
         // Tick thread
         let server_clone = server.clone();
@@ -73,7 +116,7 @@ impl Server {
             let state = server.lock().unwrap().state.clone();
 
             // Generate ID
-            let mut id: u16 = 1;
+            let mut _id: u16 = 1;
             {
                 let server = server.lock().unwrap();
                 let mut id_count = server.id_count.lock().unwrap();
@@ -83,10 +126,10 @@ impl Server {
                     id_count.0 = 1;
                 }
 
-                id = id_count.0;
+                _id = id_count.0;
             }
 
-            trace!("New connection from {:?} (ID {})", addr, id);
+            trace!("New connection from {:?} (ID {})", addr, _id);
             let stream_clone = match stream.lock().unwrap().try_clone() {
                 Ok(res) => res,
                 Err(err) => {
@@ -97,7 +140,7 @@ impl Server {
 
             // Create new peer
             let peer = Peer { 
-                id: id.clone(), 
+                id: _id.clone(), 
                 stream: stream_clone, 
                 addr, 
                 nickname: String::new(),
@@ -111,13 +154,13 @@ impl Server {
                 ready: false
             };
 
-            server.lock().unwrap().peers.write().unwrap().insert(id, Arc::new(Mutex::new(peer)));
+            server.lock().unwrap().peers.write().unwrap().insert(_id, Arc::new(Mutex::new(peer)));
             
             // Listen for messages
-            let peer = server.lock().unwrap().peers.write().unwrap().get(&id).unwrap().clone();
+            let peer = server.lock().unwrap().peers.write().unwrap().get(&_id).unwrap().clone();
             let peers = server.lock().unwrap().peers.clone();
             let server = server.clone();
-            Server::connected(&mut server.lock().unwrap(), &mut state.lock().unwrap(), peer);
+            Server::connected(&mut server.lock().unwrap(), state.clone(), peer);
 
             thread::spawn(move || {
 
@@ -136,9 +179,9 @@ impl Server {
                         Err(err) => {
                             trace!("Connection closed from {:?} due to: {}", addr, err);
                             
-                            let peer = server.lock().unwrap().peers.write().unwrap().get(&id).unwrap().clone();
-                            Server::disconnected(&mut server.lock().unwrap(), &mut state.lock().unwrap(), peer);
-                            peers.write().unwrap().remove(&id);
+                            let peer = server.lock().unwrap().peers.write().unwrap().get(&_id).unwrap().clone();
+                            Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer);
+                            peers.write().unwrap().remove(&_id);
                             break;
                         }
                     }
@@ -147,9 +190,9 @@ impl Server {
                     if read <= 0 {
                         trace!("Connection closed from {:?}", addr);
 
-                        let peer = server.lock().unwrap().peers.write().unwrap().get(&id).unwrap().clone();
-                        Server::disconnected(&mut server.lock().unwrap(), &mut state.lock().unwrap(), peer);
-                        peers.write().unwrap().remove(&id);
+                        let peer = server.lock().unwrap().peers.write().unwrap().get(&_id).unwrap().clone();
+                        Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer);
+                        peers.write().unwrap().remove(&_id);
                         break;
                     }
 
@@ -166,8 +209,8 @@ impl Server {
 
                                 let data = &in_buffer[1..];
                                 let mut pak = Packet::from(data, pak_size);
-                                let peer = server.lock().unwrap().peers.write().unwrap().get(&id).unwrap().clone();
-                                Server::got_packet(&mut server.lock().unwrap(), &mut state.lock().unwrap(), peer, &mut pak);
+                                let peer = server.lock().unwrap().peers.write().unwrap().get(&_id).unwrap().clone();
+                                Server::got_packet(&mut server.lock().unwrap(), state.clone(), peer, &mut pak);
 
                                 read -= pak_size + 1;
                             } else {
@@ -195,8 +238,8 @@ impl Server {
                                     debug!("Packet ok");
 
                                     let mut pak = Packet::from(&pak_buffer, pak_size);
-                                    let peer = server.lock().unwrap().peers.write().unwrap().get(&id).unwrap().clone();
-                                    Server::got_packet(&mut server.lock().unwrap(), &mut state.lock().unwrap(), peer, &mut pak);
+                                    let peer = server.lock().unwrap().peers.write().unwrap().get(&_id).unwrap().clone();
+                                    Server::got_packet(&mut server.lock().unwrap(), state.clone(), peer, &mut pak);
                                     pak_start = false;
                                     pak_buffer.clear();
                                 }
@@ -211,14 +254,28 @@ impl Server {
     fn tick_worker(state: Arc<Mutex<Box<dyn State>>>, server: Arc<Mutex<Server>>) 
     {
         loop {
-            state.lock().unwrap().tick(&mut server.lock().unwrap());
+            let next_state = state.lock().unwrap().tick(&mut server.lock().unwrap());
+            check_state!(next_state, &mut server.lock().unwrap());
+            
             thread::sleep(Duration::from_millis(15));
         }
     }
 
     pub fn multicast(&mut self, packet: &mut Packet) {
-        for i in self.peers.write().unwrap().iter_mut() {
-            i.1.lock().unwrap().send(packet);
+        for peer in self.peers.write().unwrap().iter_mut() {
+            peer.1.lock().unwrap().send(packet);
+            debug!("Sent packet to {}", *peer.0);
+        }
+    }
+
+    pub fn multicast_real(&mut self, packet: &mut Packet) {
+        for peer in self.peers.write().unwrap().iter_mut() {
+            if peer.1.lock().unwrap().in_queue {
+                continue;
+            }
+
+            peer.1.lock().unwrap().send(packet);
+            debug!("Sent packet to {}", *peer.0);
         }
     }
 
@@ -229,29 +286,26 @@ impl Server {
             }
 
             i.1.lock().unwrap().send(packet);
+            debug!("Sent packet to {}", *i.0);
         }
     }
 
-    pub fn set_state(&mut self, state: Box<dyn State>) {
-        info!("Server state is now {}", state.name());
-        let c_state = self.state.clone();
-        *c_state.lock().unwrap() = state;
-        c_state.lock().unwrap().init(self);
-    }
-
-    fn connected(server: &mut Server, state: &mut Box<dyn State>, peer: Arc<Mutex<Peer>>) 
+    fn connected(server: &mut Server, state: Arc<Mutex<Box<dyn State>>>, peer: Arc<Mutex<Peer>>) 
     {
-        state.connect(server, peer);
+        let next_state = state.lock().unwrap().connect(server, peer);
+        check_state!(next_state, server);
     }
 
-    fn disconnected(server: &mut Server, state: &mut Box<dyn State>, peer: Arc<Mutex<Peer>>) 
+    fn disconnected(server: &mut Server, state: Arc<Mutex<Box<dyn State>>>, peer: Arc<Mutex<Peer>>) 
     {
-        state.disconnect(server, peer);
+        let next_state = state.lock().unwrap().disconnect(server, peer);
+        check_state!(next_state, server);
     }
 
-    fn got_packet(server: &mut Server, state: &mut Box<dyn State>, peer: Arc<Mutex<Peer>>, packet: &mut Packet) 
+    fn got_packet(server: &mut Server, state: Arc<Mutex<Box<dyn State>>>, peer: Arc<Mutex<Peer>>, packet: &mut Packet) 
     {  
-        state.got_tcp_packet(server, peer, packet);
+        let next_state = state.lock().unwrap().got_tcp_packet(server, peer, packet);
+        check_state!(next_state, server);
     }
 }
 
@@ -283,7 +337,7 @@ impl Peer {
 
     pub fn send(&mut self, packet: &mut Packet) -> bool {
 
-        match self.stream.write(packet.buf()) {
+        match self.stream.write(&packet.buf()) {
             Ok(_) => {},
             Err(err) => {
                 warn!("Couldn't write to a stream: {}", err);
