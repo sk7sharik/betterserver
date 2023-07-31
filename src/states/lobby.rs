@@ -20,6 +20,7 @@ impl State for Lobby
     {
         for peer in server.peers.write().unwrap().values_mut() {
             let mut peer = peer.lock().unwrap();
+            peer.ready = false;
 
             if peer.in_queue {
                 let mut packet = Packet::new(PacketType::SERVER_IDENTITY_RESPONSE);
@@ -62,8 +63,8 @@ impl State for Lobby
                     }
                 
                     peer.timer += 1;
-                
                     if peer.timer >= 30 || (peer.pending && peer.timer >= 5) {
+                        debug!("[Lobby] Disconnecting... {} (ID {})", peer.nickname, peer.id());
                         peer.disconnect("AFK or timeout");
                         continue;
                    }
@@ -73,7 +74,7 @@ impl State for Lobby
                 server.multicast(&mut Packet::new(PacketType::SERVER_HEARTBEAT));
             
                 self.heartbeat_timer = 0;
-                debug!("Heartbeat + Check");
+                debug!("[Lobby] Heartbeat done.");
             }
         }
 
@@ -112,6 +113,8 @@ impl State for Lobby
             // Peer's identity
             PacketType::IDENTITY => {
                 self.handle_identity(server, &mut peer.lock().unwrap(), packet, true);
+                self.accept_player(&mut peer.lock().unwrap());
+                self.share_player(server, &mut peer.lock().unwrap());
             },
 
             // Peer requests player list
@@ -138,7 +141,6 @@ impl State for Lobby
 
                 let mut packet = Packet::new(PacketType::SERVER_LOBBY_CORRECT);
                 peer.lock().unwrap().send(&mut packet);
-
                 self.send_message(&mut peer.lock().unwrap(), "type .help for more info");
             },
 
@@ -238,11 +240,6 @@ impl Lobby
 
     fn accept_player(&mut self, peer: &mut Peer) 
     {
-        let mut packet = Packet::new(PacketType::SERVER_IDENTITY_RESPONSE);
-        packet.wu8(true as u8);
-        packet.wu16(peer.id());
-        peer.send(&mut packet);
-
         let mut packet = Packet::new(PacketType::SERVER_LOBBY_EXE_CHANCE);
         packet.wu8(peer.exe_chance);
         peer.send(&mut packet);

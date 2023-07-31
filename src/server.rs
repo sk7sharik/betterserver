@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream, SocketAddr};
+use std::net::{TcpListener, TcpStream, SocketAddr, UdpSocket};
 use std::num::Wrapping;
 use std::ops::AddAssign;
 use std::sync::{Arc, Mutex, RwLock};
@@ -23,9 +23,12 @@ macro_rules! check_state {
             let next_state = state.init($server);
 
             if next_state.is_some() {
-                *$server.state.lock().unwrap() = next_state.unwrap();
+                let state = next_state.unwrap();
+                log::info!("Changing state to [{}].", state.name());
+                *$server.state.lock().unwrap() = state;
             }
             else {
+                log::info!("Changing state to [{}].", state.name());
                 *$server.state.lock().unwrap() = state;
             }
         }
@@ -64,19 +67,21 @@ pub(crate) struct Server
     pub peers: Arc<RwLock<HashMap<u16, Arc<Mutex<Peer>>>>>,
     pub state: Arc<Mutex<Box<dyn State>>>,
 
-    listener: Arc<Mutex<TcpListener>>,
+    tcp_listener: Arc<Mutex<TcpListener>>,
+    udp_socket: Arc<Mutex<UdpSocket>>,
     id_count: Arc<Mutex<Wrapping<u16>>>,
     next_state: Arc<Mutex<Option<Mutex<Box<Box<dyn State + 'static>>>>>>
 }
 
 impl Server {
-    pub fn start(addr: &str) -> Arc<Mutex<Server>> 
+    pub fn start(tcp_addr: &str, udp_addr: &str) -> Arc<Mutex<Server>> 
     {
         let server = Arc::new(Mutex::new(Server {
             peers: Arc::new(RwLock::new(HashMap::new())), 
             state: Arc::new(Mutex::new(Box::new(Lobby::new()))), // Default state - Lobby
 
-            listener: Arc::new(Mutex::new(TcpListener::bind(addr).unwrap())), 
+            tcp_listener: Arc::new(Mutex::new(TcpListener::bind(tcp_addr).unwrap())), 
+            udp_socket: Arc::new(Mutex::new(UdpSocket::bind(udp_addr).unwrap())), 
             id_count: Arc::new(Mutex::new(Wrapping(0))),
             next_state: Arc::new(Mutex::new(None))
         }));
@@ -88,18 +93,45 @@ impl Server {
             Server::tick_worker(state_clone, server_clone);
         });
 
-        // Worker thread
-        let listener_clone = server.lock().unwrap().listener.clone();
+        // TCP thread
+        let listener_clone = server.lock().unwrap().tcp_listener.clone();
         let server_clone = server.clone();
         thread::spawn(move || {
-            Server::peer_worker(server_clone, listener_clone);
+            Server::tcp_worker(server_clone, listener_clone);
         });
 
-        info!("Server listening at {}", addr);
+        // UDP thread
+        let listener_clone = server.lock().unwrap().udp_socket.clone();
+        let server_clone = server.clone();
+        let state = server.lock().unwrap().state.clone();
+
+        thread::spawn(move || {
+            Server::udp_worker(server_clone, state, listener_clone);
+        });
+
+        info!("Server listening at (TCP {}, UDP {})", tcp_addr, udp_addr);
         server
     }
 
-    fn peer_worker(server: Arc<Mutex<Server>>, listener: Arc<Mutex<TcpListener>>) 
+    fn udp_worker(server: Arc<Mutex<Server>>, state: Arc<Mutex<Box<dyn State>>>, listener: Arc<Mutex<UdpSocket>>)
+    {
+        loop {
+            let mut buf = [0; 256];
+            let (size, src) = match listener.lock().unwrap().recv_from(&mut buf)
+            {
+                Ok(res) => res,
+                Err(err) => {
+                    warn!("Failed to read from UDP connection: {}", err);
+                    continue;
+                }
+            };
+
+            let mut packet = Packet::from(&buf, size);
+            Server::got_udp_packet(&mut server.lock().unwrap(), state.clone(), &src, &mut packet);
+        }
+    }
+
+    fn tcp_worker(server: Arc<Mutex<Server>>, listener: Arc<Mutex<TcpListener>>) 
     {
         for stream in listener.lock().unwrap().incoming() {
             // If failed to open a stream, ignore
@@ -151,7 +183,8 @@ impl Server {
                 pet: 0,
                 pending: true,
                 in_queue: false,
-                ready: false
+                ready: false,
+                player: None
             };
 
             server.lock().unwrap().peers.write().unwrap().insert(_id, Arc::new(Mutex::new(peer)));
@@ -160,6 +193,7 @@ impl Server {
             let peer = server.lock().unwrap().peers.write().unwrap().get(&_id).unwrap().clone();
             let peers = server.lock().unwrap().peers.clone();
             let server = server.clone();
+            info!("{:?} connected. (ID {})", peer.lock().unwrap().addr(), _id);
             Server::connected(&mut server.lock().unwrap(), state.clone(), peer);
 
             thread::spawn(move || {
@@ -177,7 +211,7 @@ impl Server {
                     {
                         Ok(sz) => read = sz,
                         Err(err) => {
-                            trace!("Connection closed from {:?} due to: {}", addr, err);
+                            trace!("{:?} disconnected (ID {}): {}", addr, _id, err);
                             
                             let peer = server.lock().unwrap().peers.write().unwrap().get(&_id).unwrap().clone();
                             Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer);
@@ -188,7 +222,7 @@ impl Server {
 
                     // Check connection close
                     if read <= 0 {
-                        trace!("Connection closed from {:?}", addr);
+                        trace!("{:?} disconnected (ID {})", addr, _id);
 
                         let peer = server.lock().unwrap().peers.write().unwrap().get(&_id).unwrap().clone();
                         Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer);
@@ -210,7 +244,7 @@ impl Server {
                                 let data = &in_buffer[1..];
                                 let mut pak = Packet::from(data, pak_size);
                                 let peer = server.lock().unwrap().peers.write().unwrap().get(&_id).unwrap().clone();
-                                Server::got_packet(&mut server.lock().unwrap(), state.clone(), peer, &mut pak);
+                                Server::got_tcp_packet(&mut server.lock().unwrap(), state.clone(), peer, &mut pak);
 
                                 read -= pak_size + 1;
                             } else {
@@ -239,7 +273,7 @@ impl Server {
 
                                     let mut pak = Packet::from(&pak_buffer, pak_size);
                                     let peer = server.lock().unwrap().peers.write().unwrap().get(&_id).unwrap().clone();
-                                    Server::got_packet(&mut server.lock().unwrap(), state.clone(), peer, &mut pak);
+                                    Server::got_tcp_packet(&mut server.lock().unwrap(), state.clone(), peer, &mut pak);
                                     pak_start = false;
                                     pak_buffer.clear();
                                 }
@@ -258,6 +292,30 @@ impl Server {
             check_state!(next_state, &mut server.lock().unwrap());
             
             thread::sleep(Duration::from_millis(15));
+        }
+    }
+
+    pub fn udp_send(&mut self, recv: &SocketAddr, packet: &mut Packet) 
+    {
+        match self.udp_socket.lock().unwrap().send_to(&packet.buf(), recv)
+        {
+            Ok(_) => {},
+            Err(err) => {
+                warn!("Failed to send packet to {}: {}", recv, err);
+            }
+        }
+    }
+
+    pub fn udp_multicast(&mut self, recvs: &Vec<SocketAddr>, packet: &mut Packet) 
+    {
+        for recv in recvs {
+            match self.udp_socket.lock().unwrap().send_to(&packet.buf(), recv)
+            {
+                Ok(_) => {},
+                Err(err) => {
+                    warn!("Failed to send packet to {}: {}", recv, err);
+                }
+            }
         }
     }
 
@@ -302,9 +360,15 @@ impl Server {
         check_state!(next_state, server);
     }
 
-    fn got_packet(server: &mut Server, state: Arc<Mutex<Box<dyn State>>>, peer: Arc<Mutex<Peer>>, packet: &mut Packet) 
+    fn got_tcp_packet(server: &mut Server, state: Arc<Mutex<Box<dyn State>>>, peer: Arc<Mutex<Peer>>, packet: &mut Packet) 
     {  
         let next_state = state.lock().unwrap().got_tcp_packet(server, peer, packet);
+        check_state!(next_state, server);
+    }
+
+    fn got_udp_packet(server: &mut Server, state: Arc<Mutex<Box<dyn State>>>, addr: &SocketAddr, packet: &mut Packet)
+    {
+        let next_state = state.lock().unwrap().got_udp_packet(server, addr, packet);
         check_state!(next_state, server);
     }
 }
@@ -319,6 +383,9 @@ pub(crate) struct Peer {
     pub ready: bool,
     pub in_queue: bool,
     pub exe_chance: u8,
+
+    /* Player */
+    pub player: Option<Player>,
 
     id: u16,
 
@@ -367,6 +434,58 @@ impl Peer {
 }
 
 
-pub(crate) struct TcpPlayer {
-    //TODO: fill this shit
+pub(crate) enum SurvivorCharacter
+{
+    None = -1,
+
+    Exe = 0,
+    Tails = 1,
+    Knuckles = 2,
+    Eggman = 3,
+    Amy = 4,
+    Cream = 5,
+    Sally = 6,
+}
+
+pub(crate) enum ExeCharacter
+{
+    None = -1,
+
+    // why exe characters start at 0 :skull:
+    Original = 0,
+    Chaos,
+    Exetior,
+    Exeller
+}
+
+pub(crate) struct Player 
+{
+    pub surv: SurvivorCharacter,
+    pub exe: ExeCharacter,
+    pub revival_times: u8,
+    pub death_timer: f32,
+    pub escaped: bool,
+    pub alive: bool,
+    pub red_ring: bool,
+    pub can_demonize: bool,
+    pub invisible: bool
+}
+
+impl Player 
+{
+    pub fn new() -> Player 
+    {
+        Player 
+        { 
+            surv: SurvivorCharacter::None, 
+            exe: ExeCharacter::None, 
+            revival_times: 0, 
+            death_timer: 0.0, 
+            escaped: false, 
+            alive: true, 
+            red_ring: false, 
+            can_demonize: true, 
+            invisible: false 
+        }
+    }
 }

@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::{sync::{Arc, Mutex}, net::SocketAddr};
 
 use log::debug;
 
@@ -12,6 +12,7 @@ pub(crate) trait State: Send + Sync
     fn connect(&mut self, _server: &mut Server, _peer: Arc<Mutex<Peer>>) -> Option<Box<dyn State>>;
     fn disconnect(&mut self, _server: &mut Server, _peer: Arc<Mutex<Peer>>) -> Option<Box<dyn State>>;
     fn got_tcp_packet(&mut self, _server: &mut Server, _peer: Arc<Mutex<Peer>>, _packet: &mut Packet) -> Option<Box<dyn State>>;
+    fn got_udp_packet(&mut self, _server: &mut Server, _addr: &SocketAddr, _packet: &mut Packet) -> Option<Box<dyn State>> { None }
 
     fn handle_identity(&mut self, _server: &mut Server, peer: &mut Peer, packet: &mut Packet, accept: bool) {
             let build_ver = packet.ru16();
