@@ -96,6 +96,10 @@ impl State for MapVote
 
     fn disconnect(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>) -> Option<Box<dyn State>>
     {
+        if peer.lock().unwrap().in_queue {
+            return None;
+        }
+        
         let id = peer.lock().unwrap().id();
         let mut packet = Packet::new(PacketType::SERVER_PLAYER_LEFT);
         packet.wu16(id);

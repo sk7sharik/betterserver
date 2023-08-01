@@ -2,6 +2,7 @@ use std::sync::{Mutex, Arc};
 
 use log::debug;
 
+use crate::map::Map;
 use crate::packet::{Packet, PacketType};
 use crate::state::State;
 use crate::server::{Server, Peer, real_peers};
@@ -11,7 +12,7 @@ use super::lobby::Lobby;
 
 pub(crate) struct Game
 {
-    
+    pub map: Arc<dyn Map>
 }
 
 impl State for Game
@@ -33,6 +34,15 @@ impl State for Game
 
     fn disconnect(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>) -> Option<Box<dyn State>>
     {
+        if peer.lock().unwrap().in_queue {
+            return None;
+        }
+        
+        let id = peer.lock().unwrap().id();
+        let mut packet = Packet::new(PacketType::SERVER_PLAYER_LEFT);
+        packet.wu16(id);
+        server.multicast_except(&mut packet, id);
+
         if real_peers!(server).count() <= 2 {
             return Some(Box::new(Lobby::new()));
         }
@@ -95,13 +105,13 @@ impl State for Game
         None
     }
 
-    fn name(&self) -> &str { "MapVote" }
+    fn name(&self) -> &str { "Game" }
 }
 
 impl Game
 {
-    pub fn new() -> Game
+    pub fn new(map: Arc<dyn Map>) -> Game
     {
-        Game {  }
+        Game { map }
     }
 }

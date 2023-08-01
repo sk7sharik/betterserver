@@ -8,6 +8,7 @@ use std::thread;
 use std::time::Duration;
 
 use log::{trace, debug, info, warn};
+use num_derive::FromPrimitive;
 use rand::{thread_rng, Rng};
 
 use crate::packet::PacketType;
@@ -51,7 +52,7 @@ macro_rules! real_peers_mut {
 macro_rules! assert_or_disconnect {
     ($expr: expr, $peer: expr) => {
         if (!$expr) {
-            $peer.disconnect("Assertion failed.");
+            $peer.disconnect(format!("assert_or_disconnect failed: \"{}\"!", stringify!($expr)).as_str());
             return None;
         }
     };
@@ -320,25 +321,40 @@ impl Server {
     }
 
     pub fn multicast(&mut self, packet: &mut Packet) {
-        for peer in self.peers.write().unwrap().iter_mut() {
-            peer.1.lock().unwrap().send(packet);
-            debug!("Sent packet to {}", *peer.0);
+        for i in self.peers.write().unwrap().iter_mut() {
+            i.1.lock().unwrap().send(packet);
+            debug!("Sent packet to {}", *i.0);
         }
     }
 
     pub fn multicast_real(&mut self, packet: &mut Packet) {
-        for peer in self.peers.write().unwrap().iter_mut() {
-            if peer.1.lock().unwrap().in_queue {
+        for i in self.peers.write().unwrap().iter_mut() {
+            if i.1.lock().unwrap().in_queue {
                 continue;
             }
 
-            peer.1.lock().unwrap().send(packet);
-            debug!("Sent packet to {}", *peer.0);
+            i.1.lock().unwrap().send(packet);
+            debug!("Sent packet to {}", *i.0);
         }
     }
 
     pub fn multicast_except(&mut self, packet: &mut Packet, id: u16) {
         for i in self.peers.write().unwrap().iter_mut() {
+            if *i.0 == id {
+                continue;
+            }
+
+            i.1.lock().unwrap().send(packet);
+            debug!("Sent packet to {}", *i.0);
+        }
+    }
+
+    pub fn multicast_real_except(&mut self, packet: &mut Packet, id: u16) {
+        for i in self.peers.write().unwrap().iter_mut() {
+            if i.1.lock().unwrap().in_queue {
+                continue;
+            }
+
             if *i.0 == id {
                 continue;
             }
@@ -433,7 +449,10 @@ impl Peer {
 
 }
 
-
+#[derive(PartialEq)]
+#[derive(Copy, Clone)]
+#[derive(FromPrimitive)]
+#[derive(Debug)]
 pub(crate) enum SurvivorCharacter
 {
     None = -1,
@@ -447,6 +466,10 @@ pub(crate) enum SurvivorCharacter
     Sally = 6,
 }
 
+#[derive(PartialEq)]
+#[derive(Copy, Clone)]
+#[derive(FromPrimitive)]
+#[derive(Debug)]
 pub(crate) enum ExeCharacter
 {
     None = -1,
@@ -460,8 +483,10 @@ pub(crate) enum ExeCharacter
 
 pub(crate) struct Player 
 {
-    pub surv: SurvivorCharacter,
-    pub exe: ExeCharacter,
+    pub ch1: SurvivorCharacter,
+    pub ch2: ExeCharacter,
+    pub exe: bool,
+
     pub revival_times: u8,
     pub death_timer: f32,
     pub escaped: bool,
@@ -477,8 +502,10 @@ impl Player
     {
         Player 
         { 
-            surv: SurvivorCharacter::None, 
-            exe: ExeCharacter::None, 
+            ch1: SurvivorCharacter::None, 
+            ch2: ExeCharacter::None, 
+            exe: false,
+            
             revival_times: 0, 
             death_timer: 0.0, 
             escaped: false, 
