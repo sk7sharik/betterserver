@@ -38,6 +38,7 @@ impl State for CharacterSelect
             let mut peer = peer.lock().unwrap();
             peer.player = Some(Player::new()); // new player
             peer.player.as_mut().unwrap().exe = self.exe == peer.id();
+            peer.exe_chance = thread_rng().gen_range(0..2);
             peer.timer = 30;
         }
 

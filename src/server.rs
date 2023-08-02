@@ -39,13 +39,13 @@ macro_rules! check_state {
 // Peers that aren't in queue
 macro_rules! real_peers {
     ($server: expr) => {
-        $server.peers.read().unwrap().values().filter(|x| !x.lock().unwrap().in_queue)
+        $server.peers.clone().read().unwrap().values().filter(|x| !x.lock().unwrap().in_queue)
     };
 }
 
 macro_rules! real_peers_mut {
     ($server: expr) => {
-        $server.peers.write().unwrap().values().filter(|x| !x.lock().unwrap().in_queue)
+        $server.peers.clone().write().unwrap().values().filter(|x| !x.lock().unwrap().in_queue)
     };
 }
 
@@ -182,12 +182,12 @@ impl Server {
                 addr, 
                 nickname: String::new(),
                 udid: String::new(),
-                exe_chance: thread_rng().gen_range(0..5),
+                exe_chance: thread_rng().gen_range(2..5),
                 timer: 0, 
                 lobby_icon: 0, 
                 pet: 0,
                 pending: true,
-                in_queue: false,
+                in_queue: true,
                 ready: false,
                 player: None
             };
@@ -437,7 +437,7 @@ impl Peer {
             }
         }
 
-        trace!("Disconnected {} because \"{}\"", self.addr, reason);
+        info!("Disconnected {} because \"{}\"", self.addr, reason);
         true
     }
 
@@ -482,9 +482,10 @@ pub(crate) struct Player
     pub exe: bool,
 
     pub revival_times: u8,
-    pub death_timer: f32,
+    pub death_timer: i32,
+    pub revival_timer: f64,
     pub escaped: bool,
-    pub alive: bool,
+    pub dead: bool,
     pub red_ring: bool,
     pub can_demonize: bool,
     pub invisible: bool
@@ -500,9 +501,10 @@ impl Player
             ch2: ExeCharacter::None, 
             exe: false,
             revival_times: 0, 
-            death_timer: 0.0, 
+            death_timer: 0,
+            revival_timer: 0.0,
             escaped: false, 
-            alive: true, 
+            dead: false, 
             red_ring: false, 
             can_demonize: true, 
             invisible: false 

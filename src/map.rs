@@ -9,7 +9,7 @@ pub(crate) trait Map: Send + Sync
     }
 
     fn player_time_multiplier(&self, server: &Server) -> f32 {
-        (real_peers!(server).count() as f32).max(3.0) / 3.0
+        (real_peers!(server).count() as f32).max(2.0) / 3.0
     }
 
     fn ring_count(&self) -> usize {
@@ -24,8 +24,12 @@ pub(crate) trait Map: Send + Sync
         true
     }
 
-    fn init(&mut self, server: &mut Server, game: &mut Game);
-    fn tick(&mut self, server: &mut Server, game: &mut Game);
+    fn bring_activate_time_sec(&self) -> u16 {
+       60 - 10
+    }
+ 
+    fn init(&mut self, server: &mut Server, game: &mut Game) {}
+    fn tick(&mut self, server: &mut Server, game: &mut Game) {}
     fn got_tcp_packet(&mut self, server: &mut Server, game: &mut Game, peer: Arc<Mutex<Peer>>, packet: &mut Packet) {}
 
     fn name(&self) -> &str;

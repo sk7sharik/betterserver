@@ -7,29 +7,16 @@ use std::sync::{Mutex, Arc, RwLock};
 use log::{info, warn, debug};
 use rand::{thread_rng, Rng};
 
+use crate::entities::eggtrack::EggmanTracker;
 use crate::entities::ring::Ring;
 use crate::entities::tailsprojectile::TailsProjectile;
 use crate::map::Map;
 use crate::packet::{Packet, PacketType};
 use crate::state::State;
-use crate::server::{Server, Peer, real_peers};
+use crate::server::{Server, Peer, real_peers, assert_or_disconnect, real_peers_mut};
 use crate::entity::Entity;
 
 use super::lobby::Lobby;
-
-pub(crate) struct Game
-{
-    pub map: Arc<Mutex<dyn Map>>,
-    pub entities: Arc<Mutex<HashMap<u16, Box<dyn Entity>>>>,
-    pub rings: Vec<bool>,
-
-    started: bool,
-    timer: u16,
-    ring_timer: u16,
-    recp: HashMap<u16, SocketAddr>,
-    entity_id: u16,
-    entity_destroy_queue: Vec<u16>
-}
 
 macro_rules! find_entities {
     ($entities: expr, $id: expr) => {
@@ -45,6 +32,37 @@ macro_rules! find_entities_mut {
 }
 pub(crate) use find_entities_mut;
 
+enum Ending
+{
+    ExeWin,
+    SurvWin,
+    TimeOver
+}
+
+pub(crate) struct Game
+{
+    pub map: Arc<Mutex<dyn Map>>,
+    recp: HashMap<u16, SocketAddr>,
+
+    // Rings
+    pub rings: Vec<bool>,
+    ring_timer: u16,
+
+    // Big ring
+    big_ring_time: u16,
+    big_ring_ready: bool,
+
+    // Game state
+    started: bool,
+    timer: u16,
+    end_timer: u16,
+    
+    // Entities
+    pub entities: Arc<Mutex<HashMap<u16, Box<dyn Entity>>>>,
+    entity_id: u16,
+    entity_destroy_queue: Vec<u16>
+}
+
 impl State for Game
 {
     fn init(&mut self, server: &mut Server) -> Option<Box<dyn State>> 
@@ -55,12 +73,24 @@ impl State for Game
         self.timer = (self.map.lock().unwrap().timer_sec(&server) * 60.0) as u16;
         self.ring_timer = (self.map.lock().unwrap().ring_time_sec(&server) * 60.0) as u16;
         self.rings = vec![false; self.map.lock().unwrap().ring_count()];
+        self.big_ring_time = self.map.lock().unwrap().bring_activate_time_sec() * 60;
+
         info!("Waiting for players...");
         None
     }
 
     fn tick(&mut self, server: &mut Server) -> Option<Box<dyn State>> 
     {
+        if self.end_timer > 0 {
+            self.end_timer -= 1;
+
+            if self.end_timer == 0 {
+                return Some(Box::new(Lobby::new()));
+            }
+
+            return None;
+        }
+
         if !self.started {
             return None;
         }
@@ -70,7 +100,6 @@ impl State for Game
 
         // Handle entities
         self.entity_check_destroy(server);
-
         let entities_clone = self.entities.clone();
         for ent in entities_clone.lock().unwrap().iter_mut() {
             let packet = ent.1.tick(server, self, ent.0);
@@ -80,23 +109,12 @@ impl State for Game
             }
         }
 
+        // Spawn rings
         if self.timer % self.ring_timer == 0 {
             self.spawn(server, Box::new(Ring::new()));
         }
 
-        self.timer -= 1;
-        if self.timer % 60 == 0 {
-            let mut packet = Packet::new(PacketType::SERVER_GAME_TIME_SYNC);
-            packet.wu16(self.timer);
-            server.multicast(&mut packet);
-            debug!("Timer tick");
-        }
-
-
-        if self.timer <= 0 {
-
-        }
-
+        self.do_timers(server);
         None
     }
 
@@ -120,6 +138,7 @@ impl State for Game
             return Some(Box::new(Lobby::new()));
         }
 
+        self.check_state(server);
         None
     }
 
@@ -138,18 +157,104 @@ impl State for Game
         {
             // Peer's identity
             PacketType::IDENTITY => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
                 self.handle_identity(server, &mut peer.lock().unwrap(), packet, false);
+            },
+
+            // Player died
+            PacketType::CLIENT_PLAYER_DEATH_STATE => {
+                let peer_count = real_peers!(server).filter(|x| !x.lock().unwrap().player.as_ref().unwrap().exe).count();
+                let demon_count = real_peers!(server).filter(|x| x.lock().unwrap().player.as_ref().unwrap().revival_times >= 2).count();
+                
+                // Sanity checks
+                let mut dead = false;
+                let mut revival_times = 0;
+                {
+                    let mut peer = peer.lock().unwrap();
+                    let mut player = peer.player.as_mut().unwrap();
+                    
+                    assert_or_disconnect!(player.revival_times < 2, &mut peer);
+                    player.dead = packet.ru8() != 0;
+                    player.revival_times = packet.ru8();
+                    player.revival_timer = 0.0;
+
+                    dead = player.dead;
+                    revival_times = player.revival_times;
+                }
+                
+                let mut packet = Packet::new(PacketType::SERVER_PLAYER_DEATH_STATE);
+                packet.wu16(id);
+                packet.wu8(dead as u8);
+                packet.wu8(revival_times);
+                server.multicast_real(&mut packet);
+
+                let mut packet = Packet::new(PacketType::SERVER_REVIVAL_STATUS);
+                packet.wu8(false as u8);
+                packet.wu16(id);
+                server.multicast(&mut packet);
+
+                if dead {
+                    info!("RIP {} (ID {}).", peer.lock().unwrap().nickname, id);
+
+                    if revival_times == 0 {
+                        peer.lock().unwrap().player.as_mut().unwrap().death_timer = 30 * 60;
+                    }
+
+                    if revival_times == 1 || (revival_times == 0 && self.timer <= 3600 * 2) {
+                        let mut packet = Packet::new(PacketType::SERVER_GAME_DEATHTIMER_END);
+                        
+                        if demon_count < peer_count / 2 {
+                            peer.lock().unwrap().player.as_mut().unwrap().revival_times = 2;
+                            packet.wu8(1);
+                            info!("{} (ID {}) was demonized!", peer.lock().unwrap().nickname, id);
+                        }
+                        else {
+                            packet.wu8(0);
+                        }
+
+                        peer.lock().unwrap().send(&mut packet);
+                    }
+                }
+                else {
+                    peer.lock().unwrap().player.as_mut().unwrap().death_timer = -1;
+                }
+
+                self.check_state(server);
+            },
+
+            // Player escaped
+            PacketType::CLIENT_PLAYER_ESCAPED => {
+                
+                // Sanity checks
+                {
+                    let mut peer = peer.lock().unwrap();
+                    assert_or_disconnect!(self.timer <= self.big_ring_time, &mut peer);
+                    assert_or_disconnect!(!peer.player.as_ref().unwrap().exe, &mut peer);
+                    assert_or_disconnect!(peer.player.as_ref().unwrap().dead, &mut peer);
+                    assert_or_disconnect!(!peer.player.as_ref().unwrap().red_ring, &mut peer);
+                    assert_or_disconnect!(peer.player.as_ref().unwrap().revival_times < 2, &mut peer);
+                    peer.player.as_mut().unwrap().escaped = true;
+                }
+
+                let mut packet = Packet::new(PacketType::SERVER_GAME_PLAYER_ESCAPED);
+                packet.wu16(id);
+                server.multicast_real(&mut packet);
+
+                info!("{} (ID {}) escaped!", peer.lock().unwrap().nickname, id);
+                self.check_state(server);
             },
 
             // Ring collected
             PacketType::CLIENT_RING_COLLECTED => {
-                let id = packet.ru8() as usize;
-                let uid = packet.ru16();
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+
+                let rid = packet.ru8() as usize;
+                let eid = packet.ru16();
                 
                 for entity in find_entities!(self.entities.clone().lock().unwrap(), "ring") {
                     let ring = entity.1.as_any().downcast_ref::<Ring>().unwrap();
                     
-                    if ring.id != id || ring.uid != uid {
+                    if ring.id != rid || *entity.0 != eid {
                         continue;
                     }
 
@@ -163,6 +268,7 @@ impl State for Game
 
             // Spawn projectile
             PacketType::CLIENT_TPROJECTILE => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
                 if find_entities!(self.entities.lock().unwrap(), "tproj").count() > 0 {
                     peer.lock().unwrap().disconnect("Projectile abusing.");
                     return None;
@@ -184,6 +290,30 @@ impl State for Game
             PacketType::CLIENT_TPROJECTILE_HIT => {
                 for proj in find_entities!(self.entities.clone().lock().unwrap(), "tproj") {
                     self.queue_destroy(proj.0);
+                }
+            },
+
+            PacketType::CLIENT_ETRACKER => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+                self.spawn(server, Box::new(EggmanTracker {
+                    x: packet.ru16(),
+                    y: packet.ru16(),
+                    activated_by: 0
+                }));
+            },
+
+            PacketType::CLIENT_ETRACKER_ACTIVATED => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+                let eid = packet.ru16();
+
+                for entity in find_entities_mut!(self.entities.clone().lock().unwrap(), "eggtrack") {
+                    if *entity.0 != eid {
+                        continue;
+                    }
+
+                    let track = entity.1.as_any_mut().downcast_mut::<EggmanTracker>().unwrap();
+                    track.activated_by = id;
+                    self.queue_destroy(entity.0);
                 }
             },
 
@@ -237,7 +367,6 @@ impl State for Game
 
         match tp {
             PacketType::CLIENT_PLAYER_DATA => {
-
                 let pak = &packet.raw()[3..];
                 server.udp_multicast_except(&self.recp, &mut Packet::headless(PacketType::CLIENT_PLAYER_DATA, pak, pak.len()), addr);
             },
@@ -254,7 +383,6 @@ impl State for Game
                 packet.wu16(pid);
                 packet.wu16(calc);
                 server.udp_multicast_except(&self.recp, &mut packet, addr);
-
             },
 
             _ => {}
@@ -274,13 +402,18 @@ impl Game
         Game 
         { 
             map,
-            timer: 0,
-            started: false,
-            entities: Arc::new(Mutex::new(HashMap::new())),
             rings: Vec::new(),
             recp: HashMap::new(),
-            ring_timer: 0,
+            started: false,
 
+            big_ring_time: 0,
+            big_ring_ready: false,
+
+            ring_timer: 0,
+            end_timer: 0,
+            timer: 0,
+
+            entities: Arc::new(Mutex::new(HashMap::new())),
             entity_id: 0,
             entity_destroy_queue: Vec::new()
         }
@@ -344,6 +477,175 @@ impl Game
         if self.entity_destroy_queue.len() > 0 {
             self.entity_destroy_queue.clear();
         }
+    }
+
+    fn do_timers(&mut self, server: &mut Server)
+    {
+        // Timer tick
+        self.timer -= 1;
+
+        // Player death timer
+        let mut packets = Vec::new();
+        for peer in real_peers!(server)
+        {
+            let peer_count = real_peers!(server).filter(|x| !x.lock().unwrap().player.as_ref().unwrap().exe).count();
+            let demon_count = real_peers!(server).filter(|x| x.lock().unwrap().player.as_ref().unwrap().revival_times >= 2).count();
+
+            let mut id = 0;
+            let mut death_timer = 0;
+            {
+                let mut peer = peer.lock().unwrap();
+                id = peer.id();
+
+                let mut player = peer.player.as_mut().unwrap();
+                death_timer = player.death_timer;
+
+                if !player.dead || player.escaped || player.revival_times >= 2 {
+                    player.death_timer = -1;
+                    continue;
+                }
+            }
+
+            if death_timer > 0 {
+                death_timer -= 1;
+
+                if self.timer <= 3600 * 2 {
+                    death_timer = 0;
+                }
+
+                if death_timer == 0 {
+                    let mut packet = Packet::new(PacketType::SERVER_GAME_DEATHTIMER_END);
+                    
+                    if demon_count < peer_count / 2 {
+                        peer.lock().unwrap().player.as_mut().unwrap().revival_times = 2;
+                        packet.wu8(1);
+                        info!("{} (ID {}) was demonized!", peer.lock().unwrap().nickname, id);
+                    }
+                    else {
+                        packet.wu8(0);
+                        info!("RIP {} (ID {})!", peer.lock().unwrap().nickname, id);
+                    }
+
+                    peer.lock().unwrap().send(&mut packet);
+                }
+
+                if death_timer % 60 == 0 {
+                    let mut packet = Packet::new(PacketType::SERVER_GAME_DEATHTIMER_TICK);
+                    packet.wu16(id);
+                    packet.wu8((death_timer / 60) as u8);
+                    packets.push(packet);
+                }
+            }
+
+            peer.lock().unwrap().player.as_mut().unwrap().death_timer = death_timer;
+        }
+
+        for packet in packets.iter_mut() {
+            server.multicast_real(packet);
+        }
+
+        // Spawn big ring
+        if self.timer == 60 * 60 {
+            let mut packet = Packet::new(PacketType::SERVER_GAME_SPAWN_RING);
+            packet.wu8(false as u8);
+            packet.wu8(thread_rng().gen_range(0..255));
+            server.multicast_real(&mut packet);
+
+            info!("Big ring spawned!");
+        }
+
+        // Activate big ring
+        if self.timer == self.big_ring_time {
+            self.big_ring_ready = true;
+
+            let mut packet = Packet::new(PacketType::SERVER_GAME_SPAWN_RING);
+            packet.wu8(true as u8);
+            packet.wu8(thread_rng().gen_range(0..255));
+            server.multicast_real(&mut packet);
+
+            info!("Big ring activate!");
+        }
+
+        if self.timer % 60 == 0 {
+            let mut packet = Packet::new(PacketType::SERVER_GAME_TIME_SYNC);
+            packet.wu16(self.timer);
+            server.multicast(&mut packet);
+            debug!("Timer tick");
+        }
+
+        // Time over
+        if self.timer <= 0 {
+            self.end(server, Ending::TimeOver);
+        }
+    }
+
+    fn check_state(&mut self, server: &mut Server) 
+    {
+        let mut alive = 0;
+        let mut escaped = 0;
+        for peer in real_peers!(server) {
+            let peer = peer.lock().unwrap();
+            let player = peer.player.as_ref().unwrap();
+
+            if player.exe {
+                continue;
+            }
+
+            if player.escaped {
+                escaped += 1;
+            }
+
+            if !player.dead {
+                alive += 1;
+            }
+        }
+
+        if alive == 0 && escaped == 0 {
+            self.end(server, Ending::ExeWin);
+            return;
+        }
+
+        let count = real_peers!(server).count();
+        if (count - alive) + escaped >= count {
+            if escaped == 0 {
+                self.end(server, Ending::ExeWin);
+            }
+            else {
+                self.end(server, Ending::SurvWin);
+            }
+        }
+    }
+
+    fn end(&mut self, server: &mut Server, ending: Ending) 
+    {
+        match ending {
+            Ending::ExeWin => {
+                info!("Exe won (killed everyone)!");
+
+                let mut packet = Packet::new(PacketType::SERVER_GAME_EXE_WINS);
+                server.multicast_real(&mut packet);
+            },
+
+            Ending::SurvWin => {
+                info!("Survivors won!");
+
+                let mut packet = Packet::new(PacketType::SERVER_GAME_SURVIVOR_WIN);
+                server.multicast_real(&mut packet);
+            },
+
+            Ending::TimeOver => {
+                info!("Exe won (time over)!");
+
+                let mut packet = Packet::new(PacketType::SERVER_GAME_TIME_SYNC);
+                packet.wu16(0);
+                server.multicast(&mut packet);
+
+                let mut packet = Packet::new(PacketType::SERVER_GAME_TIME_OVER);
+                server.multicast_real(&mut packet);
+            }
+        }
+
+        self.end_timer = 5 * 60;
     }
 
 }

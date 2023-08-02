@@ -14,14 +14,6 @@ impl Map for HideAndSeek2
     fn index(&self) -> usize {
         0
     }
-
-    fn init(&mut self, server: &mut Server, game: &mut Game) {
-        todo!()
-    }
-
-    fn tick(&mut self, server: &mut Server, game: &mut Game) {
-        todo!()
-    }
 }
 
 impl HideAndSeek2
