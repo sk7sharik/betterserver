@@ -1,4 +1,4 @@
-use crate::map::Map;
+use crate::{map::Map, states::game::Game, server::Server};
 
 pub(crate) struct RavineMist
 {
@@ -13,6 +13,14 @@ impl Map for RavineMist
     
     fn index(&self) -> usize {
         1
+    }
+
+    fn init(&mut self, server: &mut Server, game: &mut Game) {
+        todo!()
+    }
+
+    fn tick(&mut self, server: &mut Server, game: &mut Game) {
+        todo!()
     }
 }
 

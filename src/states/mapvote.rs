@@ -21,8 +21,8 @@ pub(crate) struct MapVote
 {
     timer: u16,
     
-    map_list: Vec<Arc<dyn Map>>,
-    vote_maps: Vec<Arc<dyn Map>>,
+    map_list: Vec<Arc<Mutex<dyn Map>>>,
+    vote_maps: Vec<Arc<Mutex<dyn Map>>>,
     voted_peers: Vec<u16>,
     votes: HashMap<u8, u8>
 }
@@ -48,7 +48,7 @@ impl State for MapVote
             }
         }
         else {
-            let mut last: Arc<dyn Map> = self.map_list[0].clone(); 
+            let mut last: Arc<Mutex<dyn Map>> = self.map_list[0].clone(); 
             for map in &self.map_list {
                 self.vote_maps.push(map.clone());
                 last = map.clone();
@@ -61,7 +61,7 @@ impl State for MapVote
 
         let mut packet = Packet::new(PacketType::SERVER_VOTE_MAPS);
         for map in &self.vote_maps {
-            packet.wu8(map.index() as u8);
+            packet.wu8(map.lock().unwrap().index() as u8);
         }
 
         server.multicast_real(&mut packet);
@@ -72,7 +72,7 @@ impl State for MapVote
     {
         if self.timer <= 0 {
             let winner = self.vote_winner();
-            info!("[MapVote] Map [{}] won!", winner.name());
+            info!("[MapVote] Map [{}] won!", winner.lock().unwrap().name());
 
             return Some(Box::new(CharacterSelect::new(winner)));
         }
@@ -99,7 +99,7 @@ impl State for MapVote
         if peer.lock().unwrap().in_queue {
             return None;
         }
-        
+
         let id = peer.lock().unwrap().id();
         let mut packet = Packet::new(PacketType::SERVER_PLAYER_LEFT);
         packet.wu16(id);
@@ -114,7 +114,7 @@ impl State for MapVote
 
     fn got_tcp_packet(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>, packet: &mut Packet) -> Option<Box<dyn State>> 
     {
-        let _passtrough = packet.ru8(); //TODO: get rid of
+        let passtrough = packet.ru8() != 0;
         let tp = packet.rpk();
 
         if !peer.lock().unwrap().pending {
@@ -126,16 +126,18 @@ impl State for MapVote
         {
             // Peer's identity
             PacketType::IDENTITY => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
                 self.handle_identity(server, &mut peer.lock().unwrap(), packet, false);
             },
 
             PacketType::CLIENT_VOTE_REQUEST => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
                 let map = packet.ru8();
 
                 // Sanity checks
                 assert_or_disconnect!(map < 3, &mut peer.lock().unwrap());
                 assert_or_disconnect!(!self.voted_peers.contains(&id), &mut peer.lock().unwrap());
-                debug!("[MapVote] {} (ID {}) voted for [{}].", peer.lock().unwrap().nickname, id, self.vote_maps[map as usize].name());
+                debug!("[MapVote] {} (ID {}) voted for [{}].", peer.lock().unwrap().nickname, id, self.vote_maps[map as usize].lock().unwrap().name());
 
                 self.votes.get_mut(&map).unwrap().add_assign(1);
                 self.voted_peers.push(id);
@@ -166,8 +168,8 @@ impl MapVote
         {  
             timer: 20 * 60,
             map_list: Vec::from([
-                Arc::new(HideAndSeek2::new()) as Arc<dyn Map>,
-                Arc::new(RavineMist::new()),
+                Arc::new(Mutex::new(HideAndSeek2::new())) as Arc<Mutex<dyn Map>>,
+                Arc::new(Mutex::new(RavineMist::new())),
             ]),
 
             vote_maps: Vec::new(),
@@ -187,7 +189,7 @@ impl MapVote
         }
     }
 
-    fn vote_winner(&mut self) -> Arc<dyn Map> 
+    fn vote_winner(&mut self) -> Arc<Mutex<dyn Map>> 
     {
         let mut votes = 0;
 

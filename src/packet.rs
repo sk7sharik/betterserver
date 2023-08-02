@@ -1,3 +1,4 @@
+use log::debug;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
@@ -155,7 +156,7 @@ impl Packet
 {
     pub fn new(t: PacketType) -> Packet
     {
-        let mut pack = Packet { buffer: Vec::new(), position: 3 };
+        let mut pack = Packet { buffer: Vec::new(), position: 0 };
         pack.wu8(0); // Passtrough
         pack.wpk(t); // Type
 
@@ -170,6 +171,16 @@ impl Packet
         pack
     }
 
+    pub fn headless(t: PacketType, arr: &[u8], size: usize) -> Packet
+    {
+        let mut pack = Packet { buffer: vec![0; size], position: 0 };
+        pack.buffer.copy_from_slice(&arr[..size]);
+
+        pack.buffer.insert(0, t as u8);
+        pack.buffer.insert(0, 0);
+
+        pack
+    }
 
     pub fn wpk(&mut self, val: PacketType)
     {
@@ -431,7 +442,11 @@ impl Packet
         str
     }
 
-    pub fn buf(&self) -> Vec<u8>
+    pub fn raw(&self) -> &[u8] {
+        &self.buffer
+    }
+
+    pub fn sized(&self) -> Vec<u8>
     {
         let mut buffer = self.buffer.clone();
         buffer.insert(0, (self.buffer.len()) as u8);

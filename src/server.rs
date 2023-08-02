@@ -127,6 +127,10 @@ impl Server {
                 }
             };
 
+            if size <= 0 {
+                continue;
+            }
+
             let mut packet = Packet::from(&buf, size);
             Server::got_udp_packet(&mut server.lock().unwrap(), state.clone(), &src, &mut packet);
         }
@@ -202,7 +206,6 @@ impl Server {
                 let mut in_buffer = [0; 256];
 
                 let mut pak_buffer: Vec<u8> = Vec::new();
-                let mut pak_start = false;
                 let mut pak_size: usize = 0;
 
                 loop {
@@ -212,9 +215,9 @@ impl Server {
                     {
                         Ok(sz) => read = sz,
                         Err(err) => {
-                            trace!("{:?} disconnected (ID {}): {}", addr, _id, err);
+                            debug!("{:?} disconnected (ID {}): {}", addr, _id, err);
                             
-                            let peer = server.lock().unwrap().peers.write().unwrap().get(&_id).unwrap().clone();
+                            let peer = peers.write().unwrap().get(&_id).unwrap().clone();
                             Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer);
                             peers.write().unwrap().remove(&_id);
                             break;
@@ -223,61 +226,33 @@ impl Server {
 
                     // Check connection close
                     if read <= 0 {
-                        trace!("{:?} disconnected (ID {})", addr, _id);
+                        debug!("{:?} disconnected (ID {})", addr, _id);
 
-                        let peer = server.lock().unwrap().peers.write().unwrap().get(&_id).unwrap().clone();
+                        let peer = peers.write().unwrap().get(&_id).unwrap().clone();
                         Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer);
                         peers.write().unwrap().remove(&_id);
                         break;
                     }
 
-                    while read > 0 {
-                        if !pak_start {
-
+                    let mut pos = 0;
+                    while pos < read {
+                        if pak_size <= 0 {
+                            pak_size = in_buffer[pos] as usize;
                             pak_buffer.clear();
-                            pak_size = in_buffer[0] as usize;
-                        
-                            debug!("Packet {}", pak_size);
-
-                            if read - 1 >= pak_size {
-                                debug!("Packet ok");
-
-                                let data = &in_buffer[1..];
-                                let mut pak = Packet::from(data, pak_size);
-                                let peer = server.lock().unwrap().peers.write().unwrap().get(&_id).unwrap().clone();
-                                Server::got_tcp_packet(&mut server.lock().unwrap(), state.clone(), peer, &mut pak);
-
-                                read -= pak_size + 1;
-                            } else {
-                                debug!("Packet split");
-                                pak_start = true;
-
-                                // Read everything that we got left
-                                for i in &in_buffer[1..] {
-                                    pak_buffer.push(*i);
-                                }
-
-                                pak_size -= read - 1;
-                                read = 0;
-                            }
+                            pos += 1;
                         }
                         else {
-                            debug!("Packet part arrived");
-                            
-                            for i in &in_buffer[1..] {
-                                pak_buffer.push(*i);
-                                pak_size -= 1;
-                                read -= 1;
+                            pak_buffer.push(in_buffer[pos]);
+                            pak_size -= 1;
+                            pos += 1;
 
-                                if pak_size <= 0 {
-                                    debug!("Packet ok");
+                            if pak_size <= 0 {
+                                debug!("Packet ok");
 
-                                    let mut pak = Packet::from(&pak_buffer, pak_size);
-                                    let peer = server.lock().unwrap().peers.write().unwrap().get(&_id).unwrap().clone();
-                                    Server::got_tcp_packet(&mut server.lock().unwrap(), state.clone(), peer, &mut pak);
-                                    pak_start = false;
-                                    pak_buffer.clear();
-                                }
+                                let mut pak = Packet::from(&pak_buffer, pak_buffer.len());
+                                let peer = peers.write().unwrap().get(&_id).unwrap().clone();
+                                Server::got_tcp_packet(&mut server.lock().unwrap(), state.clone(), peer, &mut pak);
+                                pak_buffer.clear();
                             }
                         }
                     }
@@ -289,16 +264,18 @@ impl Server {
     fn tick_worker(state: Arc<Mutex<Box<dyn State>>>, server: Arc<Mutex<Server>>) 
     {
         loop {
-            let next_state = state.lock().unwrap().tick(&mut server.lock().unwrap());
-            check_state!(next_state, &mut server.lock().unwrap());
-            
+            {
+                let server = &mut server.lock().unwrap();
+                let next_state = state.lock().unwrap().tick(server);
+                check_state!(next_state, server);
+            }
             thread::sleep(Duration::from_millis(15));
         }
     }
 
     pub fn udp_send(&mut self, recv: &SocketAddr, packet: &mut Packet) 
     {
-        match self.udp_socket.lock().unwrap().send_to(&packet.buf(), recv)
+        match self.udp_socket.lock().unwrap().send_to(&packet.raw(), recv)
         {
             Ok(_) => {},
             Err(err) => {
@@ -307,10 +284,27 @@ impl Server {
         }
     }
 
-    pub fn udp_multicast(&mut self, recvs: &Vec<SocketAddr>, packet: &mut Packet) 
+    pub fn udp_multicast(&mut self, recvs: &HashMap<u16, SocketAddr>, packet: &mut Packet) 
     {
-        for recv in recvs {
-            match self.udp_socket.lock().unwrap().send_to(&packet.buf(), recv)
+        for recv in recvs.values() {
+            match self.udp_socket.lock().unwrap().send_to(packet.raw(), recv)
+            {
+                Ok(_) => {},
+                Err(err) => {
+                    warn!("Failed to send packet to {}: {}", recv, err);
+                }
+            }
+        }
+    }
+
+    pub fn udp_multicast_except(&mut self, recvs: &HashMap<u16, SocketAddr>, packet: &mut Packet, except: &SocketAddr) 
+    {
+        for recv in recvs.values() {
+            if *recv == *except {
+                continue;
+            }
+
+            match self.udp_socket.lock().unwrap().send_to(packet.raw(), recv)
             {
                 Ok(_) => {},
                 Err(err) => {
@@ -420,7 +414,7 @@ impl Peer {
 
     pub fn send(&mut self, packet: &mut Packet) -> bool {
 
-        match self.stream.write(&packet.buf()) {
+        match self.stream.write(&packet.sized()) {
             Ok(_) => {},
             Err(err) => {
                 warn!("Couldn't write to a stream: {}", err);
@@ -505,7 +499,6 @@ impl Player
             ch1: SurvivorCharacter::None, 
             ch2: ExeCharacter::None, 
             exe: false,
-            
             revival_times: 0, 
             death_timer: 0.0, 
             escaped: false, 

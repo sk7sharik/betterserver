@@ -19,7 +19,7 @@ pub(crate) struct CharacterSelect
 {
     heartbeat_timer: u8,
 
-    map: Arc<dyn Map>,
+    map: Arc<Mutex<dyn Map>>,
     exe: u16
 }
 
@@ -31,7 +31,7 @@ impl State for CharacterSelect
 
         let mut packet = Packet::new(PacketType::SERVER_LOBBY_EXE);
         packet.wu16(self.exe);
-        packet.wu16(self.map.index() as u16);
+        packet.wu16(self.map.lock().unwrap().index() as u16);
         server.multicast_real(&mut packet);
 
         for peer in real_peers!(server) {
@@ -93,7 +93,7 @@ impl State for CharacterSelect
         if peer.lock().unwrap().in_queue {
             return None;
         }
-        
+
         let id = peer.lock().unwrap().id();
         let mut packet = Packet::new(PacketType::SERVER_PLAYER_LEFT);
         packet.wu16(id);
@@ -113,7 +113,7 @@ impl State for CharacterSelect
 
     fn got_tcp_packet(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>, packet: &mut Packet) -> Option<Box<dyn State>> 
     {
-        let _passtrough = packet.ru8(); //TODO: get rid of
+        let passtrough = packet.ru8() != 0;
         let tp = packet.rpk();
 
         let id = peer.lock().unwrap().id();
@@ -121,10 +121,14 @@ impl State for CharacterSelect
         {
             // Peer's identity
             PacketType::IDENTITY => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
                 self.handle_identity(server, &mut peer.lock().unwrap(), packet, false);
             },
 
             PacketType::CLIENT_REQUEST_CHARACTER => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+                assert_or_disconnect!(self.exe != id, &mut peer.lock().unwrap());
+                
                 let char: SurvivorCharacter = match FromPrimitive::from_u8(packet.ru8())
                 {
                     Some(res) => res,
@@ -160,6 +164,9 @@ impl State for CharacterSelect
             },
 
             PacketType::CLIENT_REQUEST_EXECHARACTER => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+                assert_or_disconnect!(self.exe == id, &mut peer.lock().unwrap());
+
                 let char: ExeCharacter = match FromPrimitive::from_u8(packet.ru8() - 1)
                 {
                     Some(res) => res,
@@ -203,7 +210,7 @@ impl State for CharacterSelect
 
 impl CharacterSelect
 {
-    pub fn new(map: Arc<dyn Map>) -> CharacterSelect
+    pub fn new(map: Arc<Mutex<dyn Map>>) -> CharacterSelect
     {
         CharacterSelect { exe: 0, heartbeat_timer: 0, map }
     }

@@ -2,10 +2,12 @@ use server::Server;
 
 mod packet;
 mod server;
+mod entities;
 mod map;
 mod maps;
 mod state;
 mod states;
+mod entity;
 
 fn main() 
 {
