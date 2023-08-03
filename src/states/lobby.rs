@@ -199,8 +199,7 @@ impl State for Lobby
         packet.wu16(id);
         server.multicast_except(&mut packet, id);
         
-        let count = server.peers.read().unwrap().len();
-        if count == 2 {
+        if server.peers.read().unwrap().len() == 1 {
             if self.countdown {
                 self.countdown = false;
                 let mut packet = Packet::new(PacketType::SERVER_LOBBY_COUNTDOWN);

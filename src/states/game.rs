@@ -134,7 +134,7 @@ impl State for Game
         packet.wu16(id);
         server.multicast_except(&mut packet, id);
 
-        if real_peers!(server).count() <= 2 {
+        if real_peers!(server).count() <= 1 {
             return Some(Box::new(Lobby::new()));
         }
 
@@ -230,7 +230,7 @@ impl State for Game
                     let mut peer = peer.lock().unwrap();
                     assert_or_disconnect!(self.timer <= self.big_ring_time, &mut peer);
                     assert_or_disconnect!(!peer.player.as_ref().unwrap().exe, &mut peer);
-                    assert_or_disconnect!(peer.player.as_ref().unwrap().dead, &mut peer);
+                    assert_or_disconnect!(!peer.player.as_ref().unwrap().dead, &mut peer);
                     assert_or_disconnect!(!peer.player.as_ref().unwrap().red_ring, &mut peer);
                     assert_or_disconnect!(peer.player.as_ref().unwrap().revival_times < 2, &mut peer);
                     peer.player.as_mut().unwrap().escaped = true;

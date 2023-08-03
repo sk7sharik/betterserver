@@ -217,9 +217,8 @@ impl Server {
                         Err(err) => {
                             debug!("{:?} disconnected (ID {}): {}", addr, _id, err);
                             
-                            let peer = peers.write().unwrap().get(&_id).unwrap().clone();
+                            let peer = peers.write().unwrap().remove(&_id).unwrap();
                             Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer);
-                            peers.write().unwrap().remove(&_id);
                             break;
                         }
                     }
@@ -228,9 +227,8 @@ impl Server {
                     if read <= 0 {
                         debug!("{:?} disconnected (ID {})", addr, _id);
 
-                        let peer = peers.write().unwrap().get(&_id).unwrap().clone();
+                        let peer = peers.write().unwrap().remove(&_id).unwrap();
                         Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer);
-                        peers.write().unwrap().remove(&_id);
                         break;
                     }
 

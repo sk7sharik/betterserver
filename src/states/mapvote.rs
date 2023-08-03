@@ -105,7 +105,7 @@ impl State for MapVote
         packet.wu16(id);
         server.multicast_except(&mut packet, id);
 
-        if real_peers!(server).count() <= 2 {
+        if real_peers!(server).count() <= 1 {
             return Some(Box::new(Lobby::new()));
         }
 
