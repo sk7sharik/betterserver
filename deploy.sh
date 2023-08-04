@@ -27,7 +27,7 @@ then
     printf ":: Would you like to do additional configuration? (y/n): "
     read CHOICE
 
-    if test "$CHOICE" -eq "y"
+    if [ "$CHOICE" = "y" ];
     then
         nano "config.toml"
     else
