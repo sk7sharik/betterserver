@@ -422,6 +422,7 @@ impl State for Game
                     break;
                 }
 
+                // Cream's ring
                 if rid == 255 {
                     for entity in find_entities!(self.entities.clone().lock().unwrap(), "creamring") {
                         let ring = entity.1.as_any().downcast_ref::<CreamRing>().unwrap();

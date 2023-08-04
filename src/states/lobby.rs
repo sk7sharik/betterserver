@@ -5,7 +5,7 @@ use crate::{state::State, server::{Server, Peer}, packet::{Packet, PacketType, s
 
 use super::mapvote::MapVote;
 
-pub(crate) const BUILD_VER: u16 = 100;
+pub(crate) const BUILD_VER: u16 = 101;
 
 pub(crate) struct Lobby
 {
