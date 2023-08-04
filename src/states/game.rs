@@ -1,19 +1,21 @@
-use std::any::Any;
-use std::borrow::BorrowMut;
 use std::collections::HashMap;
+use std::f32::consts::PI;
 use std::net::SocketAddr;
-use std::sync::{Mutex, Arc, RwLock};
+use std::sync::{Mutex, Arc};
 
 use log::{info, warn, debug};
 use rand::{thread_rng, Rng};
 
+use crate::entities::blackring::BlackRing;
+use crate::entities::creamring::CreamRing;
 use crate::entities::eggtrack::EggmanTracker;
+use crate::entities::exclone::ExellerClone;
 use crate::entities::ring::Ring;
 use crate::entities::tailsprojectile::TailsProjectile;
 use crate::map::Map;
 use crate::packet::{Packet, PacketType};
 use crate::state::State;
-use crate::server::{Server, Peer, real_peers, assert_or_disconnect, real_peers_mut};
+use crate::server::{Server, Peer, real_peers, assert_or_disconnect, SurvivorCharacter, PlayerRevival};
 use crate::entity::Entity;
 
 use super::lobby::Lobby;
@@ -155,13 +157,11 @@ impl State for Game
         let id = peer.lock().unwrap().id();
         match tp
         {
-            // Peer's identity
             PacketType::IDENTITY => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
                 self.handle_identity(server, &mut peer.lock().unwrap(), packet, false);
             },
 
-            // Player died
             PacketType::CLIENT_PLAYER_DEATH_STATE => {
                 let peer_count = real_peers!(server).filter(|x| !x.lock().unwrap().player.as_ref().unwrap().exe).count();
                 let demon_count = real_peers!(server).filter(|x| x.lock().unwrap().player.as_ref().unwrap().revival_times >= 2).count();
@@ -176,7 +176,7 @@ impl State for Game
                     assert_or_disconnect!(player.revival_times < 2, &mut peer);
                     player.dead = packet.ru8() != 0;
                     player.revival_times = packet.ru8();
-                    player.revival_timer = 0.0;
+                    player.revival = PlayerRevival { progress: 0.0, initiators: Vec::new() };
 
                     dead = player.dead;
                     revival_times = player.revival_times;
@@ -222,7 +222,6 @@ impl State for Game
                 self.check_state(server);
             },
 
-            // Player escaped
             PacketType::CLIENT_PLAYER_ESCAPED => {
                 
                 // Sanity checks
@@ -244,25 +243,67 @@ impl State for Game
                 self.check_state(server);
             },
 
-            // Ring collected
-            PacketType::CLIENT_RING_COLLECTED => {
-                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+            PacketType::CLIENT_REVIVAL_PROGRESS => {
+                let pid = packet.ru16();
+                let rings = packet.ru8();
+                let mut sub_vec: Vec<u16> = Vec::new();
 
-                let rid = packet.ru8() as usize;
-                let eid = packet.ru16();
-                
-                for entity in find_entities!(self.entities.clone().lock().unwrap(), "ring") {
-                    let ring = entity.1.as_any().downcast_ref::<Ring>().unwrap();
-                    
-                    if ring.id != rid || *entity.0 != eid {
+                for peer in real_peers!(server) {
+                    if peer.lock().unwrap().id() != pid {
                         continue;
                     }
 
-                    let mut packet = Packet::new(PacketType::SERVER_RING_COLLECTED);
-                    packet.wu8(ring.red as u8);
-                    peer.lock().unwrap().send(&mut packet);
+                    if peer.lock().unwrap().player.as_ref().unwrap().revival_times >= 2 {
+                        break;
+                    }
 
-                    self.queue_destroy(entity.0);
+                    if peer.lock().unwrap().player.as_ref().unwrap().revival.progress <= 0.0 {
+                        let mut packet = Packet::new(PacketType::SERVER_REVIVAL_STATUS);
+                        packet.wu8(true as u8);
+                        packet.wu16(pid);
+
+                        server.multicast_real(&mut packet);
+                    }
+
+                    if !peer.lock().unwrap().player.as_ref().unwrap().revival.initiators.contains(&id) {
+                        peer.lock().unwrap().player.as_mut().unwrap().revival.initiators.push(id.clone());
+                    }
+
+                    peer.lock().unwrap().player.as_mut().unwrap().revival.progress += 0.015 + (0.004 * rings as f64);
+                    if peer.lock().unwrap().player.as_ref().unwrap().revival.progress >= 1.0 {
+                        sub_vec = peer.lock().unwrap().player.as_ref().unwrap().revival.initiators.clone();
+                        peer.lock().unwrap().player.as_mut().unwrap().revival = PlayerRevival { progress: 0.0, initiators: Vec::new() };
+
+                        let mut packet = Packet::new(PacketType::SERVER_REVIVAL_STATUS);
+                        packet.wu8(false as u8);
+                        packet.wu16(pid);
+                        server.multicast_real(&mut packet);
+
+                        peer.lock().unwrap().send(&mut Packet::new(PacketType::SERVER_REVIVAL_REVIVED));
+
+                        info!("{} (ID {}) was revived!", peer.lock().unwrap().nickname, id);
+                    }
+                    else {
+                        let mut packet = Packet::new(PacketType::SERVER_REVIVAL_PROGRESS);
+                        packet.wu16(pid);
+                        packet.wf64(peer.lock().unwrap().player.as_ref().unwrap().revival.progress);
+                        server.udp_multicast(&self.recp, &mut packet);
+                    }
+
+                    break;
+                }
+
+                for tid in sub_vec {
+                    for peer in real_peers!(server) {
+                        let mut peer = peer.lock().unwrap();
+
+                        if peer.id() != tid {
+                            continue;
+                        }
+
+                        peer.send(&mut Packet::new(PacketType::SERVER_REVIVAL_RINGSUB));
+                        break;
+                    } 
                 }
             },
 
@@ -314,6 +355,139 @@ impl State for Game
                     let track = entity.1.as_any_mut().downcast_mut::<EggmanTracker>().unwrap();
                     track.activated_by = id;
                     self.queue_destroy(entity.0);
+                    break;
+                }
+            },
+
+            PacketType::CLIENT_CREAM_SPAWN_RINGS => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+
+                let x = packet.ru16();
+                let y = packet.ru16();
+                let red = packet.ru8() != 0;
+
+                // Sanity checks
+                {
+                    let mut peer = peer.lock().unwrap();
+                    let player = peer.player.as_ref().unwrap();
+
+                    assert_or_disconnect!(player.ch1 == SurvivorCharacter::Cream, &mut peer);
+
+                    if red {
+                        assert_or_disconnect!(player.revival_times >= 2, &mut peer);
+                    }
+                    else {
+                        assert_or_disconnect!(player.revival_times < 2 && !player.dead, &mut peer);
+                    }
+                }
+
+                if red {
+                    for i in 0..2 {
+                        self.spawn(server, Box::new(CreamRing {
+                            x: (x as f32 + (PI * 2.5 - (i as f32 * PI)).sin() * 26.0) as i16 - 1,
+                            y: (y as f32 + (PI * 2.5 - (i as f32 * PI)).cos() * 26.0) as i16,
+                            red: true
+                        }));
+                    }
+                }
+                else {
+                    for i in 0..3 {
+                        self.spawn(server, Box::new(CreamRing {
+                            x: (x as f32 + (PI * 2.5 + (i as f32 * (PI / 2.0))).sin() * 26.0) as i16,
+                            y: (y as f32 + (PI * 2.5 + (i as f32 * (PI / 2.0))).cos() * 26.0) as i16,
+                            red: false
+                        }));
+                    }
+                }
+            },
+
+            PacketType::CLIENT_RING_COLLECTED => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+
+                let rid = packet.ru8() as usize;
+                let eid = packet.ru16();
+                
+                for entity in find_entities!(self.entities.clone().lock().unwrap(), "ring") {
+                    let ring = entity.1.as_any().downcast_ref::<Ring>().unwrap();
+                    
+                    if ring.id != rid || *entity.0 != eid {
+                        continue;
+                    }
+
+                    let mut packet = Packet::new(PacketType::SERVER_RING_COLLECTED);
+                    packet.wu8(ring.red as u8);
+                    peer.lock().unwrap().send(&mut packet);
+
+                    self.queue_destroy(entity.0);
+                    break;
+                }
+
+                if rid == 255 {
+                    for entity in find_entities!(self.entities.clone().lock().unwrap(), "creamring") {
+                        let ring = entity.1.as_any().downcast_ref::<CreamRing>().unwrap();
+                        
+                        if *entity.0 != eid {
+                            continue;
+                        }
+
+                        let mut packet = Packet::new(PacketType::SERVER_RING_COLLECTED);
+                        packet.wu8(ring.red as u8);
+                        peer.lock().unwrap().send(&mut packet);
+
+                        self.queue_destroy(entity.0);
+                        break;
+                    }
+                }
+            },
+
+            PacketType::CLIENT_ERECTOR_BRING_SPAWN => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+                let x = packet.ru16();
+                let y = packet.ru16();
+                let rid = self.spawn_quiet(server, Box::new(BlackRing {}));
+
+                let mut packet = Packet::new(PacketType::SERVER_ERECTOR_BRING_SPAWN);
+                packet.wu16(rid);
+                packet.wu16(x);
+                packet.wu16(y);
+                server.multicast_real(&mut packet);
+            },
+
+            PacketType::CLIENT_ERECTOR_BALLS => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+
+                let x = packet.rf32();
+                let y = packet.rf32();
+
+                let mut packet = Packet::new(PacketType::CLIENT_ERECTOR_BALLS);
+                packet.wf32(x);
+                packet.wf32(y);
+                server.multicast_real(&mut packet);
+            },
+
+            PacketType::CLIENT_EXELLER_SPAWN_CLONE => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+                assert_or_disconnect!(find_entities!(self.entities.clone().lock().unwrap(), "exclone").count() < 2, &mut peer.lock().unwrap());
+
+                self.spawn(server, Box::new(ExellerClone {
+                    owner_id: id,
+                    x: packet.ru16(),
+                    y: packet.ru16(),
+                    dir: packet.ri8()
+                }));
+            },
+
+            PacketType::CLIENT_EXELLER_TELEPORT_CLONE => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+                let cid = packet.ru16();
+                
+                for entity in find_entities!(self.entities.clone().lock().unwrap(), "exclone") {
+                    if *entity.0 != cid {
+                        continue;
+                    }
+                    
+                    self.queue_destroy(entity.0);
+                    break;
                 }
             },
 
@@ -419,7 +593,7 @@ impl Game
         }
     }
 
-    pub fn spawn(&mut self, server: &mut Server, entity: Box<dyn Entity>) 
+    pub fn spawn(&mut self, server: &mut Server, entity: Box<dyn Entity>) -> u16
     {
         self.entity_id += 1;
         let id = self.entity_id;
@@ -433,9 +607,11 @@ impl Game
 
         info!("Spawned entity (type {}, ID {})", entity.id(), id);
         self.entities.lock().unwrap().insert(id, entity);
+
+        id
     }
 
-    pub fn spawn_quiet(&mut self, server: &mut Server, entity: Box<dyn Entity>) 
+    pub fn spawn_quiet(&mut self, server: &mut Server, entity: Box<dyn Entity>) -> u16
     {
         self.entity_id += 1;
         let id = self.entity_id;
@@ -445,6 +621,8 @@ impl Game
 
         info!("Spawned entity (quiet) (type {}, ID {})", entity.id(), id);
         self.entities.lock().unwrap().insert(id, entity);
+
+        id
     }
 
     pub fn queue_destroy(&mut self, id: &u16)

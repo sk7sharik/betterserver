@@ -14,5 +14,7 @@ fn main()
     log4rs::init_file("logging_config.yaml", Default::default()).unwrap();
 
     let _server = Server::start("0.0.0.0:7606", "0.0.0.0:8606");
-    loop {}
+    loop {
+        
+    }
 }

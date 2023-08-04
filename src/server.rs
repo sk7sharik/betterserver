@@ -43,12 +43,6 @@ macro_rules! real_peers {
     };
 }
 
-macro_rules! real_peers_mut {
-    ($server: expr) => {
-        $server.peers.clone().write().unwrap().values().filter(|x| !x.lock().unwrap().in_queue)
-    };
-}
-
 macro_rules! assert_or_disconnect {
     ($expr: expr, $peer: expr) => {
         if (!$expr) {
@@ -59,7 +53,6 @@ macro_rules! assert_or_disconnect {
 }
 
 pub(crate) use real_peers;
-pub(crate) use real_peers_mut;
 pub(crate) use assert_or_disconnect;
 
 
@@ -248,7 +241,7 @@ impl Server {
                                 debug!("Packet ok");
 
                                 let mut pak = Packet::from(&pak_buffer, pak_buffer.len());
-                                let peer = peers.write().unwrap().get(&_id).unwrap().clone();
+                                let peer = peers.read().unwrap().get(&_id).unwrap().clone();
                                 Server::got_tcp_packet(&mut server.lock().unwrap(), state.clone(), peer, &mut pak);
                                 pak_buffer.clear();
                             }
@@ -313,14 +306,14 @@ impl Server {
     }
 
     pub fn multicast(&mut self, packet: &mut Packet) {
-        for i in self.peers.write().unwrap().iter_mut() {
+        for i in self.peers.read().unwrap().iter() {
             i.1.lock().unwrap().send(packet);
             debug!("Sent packet to {}", *i.0);
         }
     }
 
     pub fn multicast_real(&mut self, packet: &mut Packet) {
-        for i in self.peers.write().unwrap().iter_mut() {
+        for i in self.peers.read().unwrap().iter() {
             if i.1.lock().unwrap().in_queue {
                 continue;
             }
@@ -331,7 +324,7 @@ impl Server {
     }
 
     pub fn multicast_except(&mut self, packet: &mut Packet, id: u16) {
-        for i in self.peers.write().unwrap().iter_mut() {
+        for i in self.peers.read().unwrap().iter() {
             if *i.0 == id {
                 continue;
             }
@@ -342,7 +335,7 @@ impl Server {
     }
 
     pub fn multicast_real_except(&mut self, packet: &mut Packet, id: u16) {
-        for i in self.peers.write().unwrap().iter_mut() {
+        for i in self.peers.read().unwrap().iter() {
             if i.1.lock().unwrap().in_queue {
                 continue;
             }
@@ -481,12 +474,16 @@ pub(crate) struct Player
 
     pub revival_times: u8,
     pub death_timer: i32,
-    pub revival_timer: f64,
     pub escaped: bool,
     pub dead: bool,
     pub red_ring: bool,
-    pub can_demonize: bool,
-    pub invisible: bool
+    pub revival: PlayerRevival
+}
+
+pub(crate) struct PlayerRevival
+{
+    pub progress: f64,
+    pub initiators: Vec<u16>
 }
 
 impl Player 
@@ -500,12 +497,10 @@ impl Player
             exe: false,
             revival_times: 0, 
             death_timer: 0,
-            revival_timer: 0.0,
             escaped: false, 
             dead: false, 
-            red_ring: false, 
-            can_demonize: true, 
-            invisible: false 
+            red_ring: false,
+            revival: PlayerRevival { progress: 0.0, initiators: Vec::new() }
         }
     }
 }

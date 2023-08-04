@@ -9,7 +9,7 @@ pub(crate) trait Map: Send + Sync
     }
 
     fn player_time_multiplier(&self, server: &Server) -> f32 {
-        (real_peers!(server).count() as f32).max(2.0) / 3.0
+        (real_peers!(server).count() as f32).max(2.5) / 3.0
     }
 
     fn ring_count(&self) -> usize {
