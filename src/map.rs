@@ -13,11 +13,11 @@ pub(crate) trait Map: Send + Sync
     }
 
     fn ring_count(&self) -> usize {
-        25
+        1
     }
 
     fn ring_time_sec(&self, server: &Server) -> f32 {
-        5.0 - self.player_time_multiplier(server) * 0.5
+        5.0 - self.player_time_multiplier(server) * 0.25
     }
 
     fn spawn_red_rings(&self) -> bool {

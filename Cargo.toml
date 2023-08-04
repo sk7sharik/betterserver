@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-binary-reader = "0.4.5"
 num-traits = "0.2"
 num-derive = "0.2"
 log = "0.4"
 log4rs = "1"
-rand = ">=0.8"
+rand = "0.8"
+toml = "0.7.6"

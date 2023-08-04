@@ -14,6 +14,10 @@ impl Map for HideAndSeek2
     fn index(&self) -> usize {
         0
     }
+
+    fn ring_count(&self) -> usize {
+        25
+    }
 }
 
 impl HideAndSeek2

@@ -14,6 +14,10 @@ impl Map for RavineMist
     fn index(&self) -> usize {
         1
     }
+
+    fn ring_count(&self) -> usize {
+        27
+    }
 }
 
 impl RavineMist

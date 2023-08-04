@@ -454,6 +454,23 @@ impl State for Game
                 server.multicast_real(&mut packet);
             },
 
+            PacketType::CLIENT_BRING_COLLECTED => {
+                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+
+                let eid = packet.ru16();
+                for entity in find_entities!(self.entities.clone().lock().unwrap(), "blackring") {                    
+                    if *entity.0 != eid {
+                        continue;
+                    }
+
+                    let mut packet = Packet::new(PacketType::SERVER_BRING_COLLECTED);
+                    peer.lock().unwrap().send(&mut packet);
+
+                    self.queue_destroy(entity.0);
+                    break;
+                }
+            },
+
             PacketType::CLIENT_ERECTOR_BALLS => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
 
