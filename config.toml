@@ -1,10 +1,7 @@
-[logging]
+gui = true
 debug = true
-webhook_url=""
 
-[dynamic]
-enabled = false
-max_count = 20
-
-[gui]
-enabled = true
+[server]
+count = 1
+tcp_port = 7606
+udp_port = 8606
