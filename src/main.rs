@@ -24,7 +24,7 @@ fn init_logger()
     let console = ConsoleAppender::builder().encoder(Box::new(PatternEncoder::default())).build();
     let logfile = FileAppender::builder()
     .encoder(Box::new(PatternEncoder::default()))
-    .build(format!("log/{}.log", Utc::now().format("%Y-%m-%d %H-%M-%S")))
+    .build(format!("logs/{}.log", Utc::now().format("%Y-%m-%d %H-%M-%S")))
     .unwrap();
 
     let config = Config::builder()

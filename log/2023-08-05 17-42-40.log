@@ -1,5 +1,0 @@
-2023-08-05T19:42:40.652192800+02:00 INFO disasterserver_new::server - Server listening at (TCP 0.0.0.0:7606, UDP 0.0.0.0:8606)
-2023-08-05T19:42:41.724274900+02:00 DEBUG disasterserver_new::states::lobby - [Lobby] Heartbeat done.
-2023-08-05T19:42:42.698648700+02:00 DEBUG disasterserver_new::states::lobby - [Lobby] Heartbeat done.
-2023-08-05T19:42:43.685567200+02:00 DEBUG disasterserver_new::states::lobby - [Lobby] Heartbeat done.
-2023-08-05T19:42:44.699480600+02:00 DEBUG disasterserver_new::states::lobby - [Lobby] Heartbeat done.
