@@ -5,3 +5,6 @@ webhook_url=""
 [dynamic]
 enabled = false
 max_count = 20
+
+[gui]
+enabled = true

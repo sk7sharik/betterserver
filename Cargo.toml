@@ -3,8 +3,6 @@ name = "disasterserver_new"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 num-traits = "0.2"
 num-derive = "0.2"
@@ -12,3 +10,11 @@ log = "0.4"
 log4rs = "1"
 rand = "0.8"
 toml = "0.7.6"
+fltk = "^1.4"
+chrono = "0.4.26"
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[profile.release]
+strip = true
