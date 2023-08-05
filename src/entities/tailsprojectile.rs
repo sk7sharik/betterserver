@@ -35,7 +35,7 @@ impl Entity for TailsProjectile
 
     fn tick(&mut self, _server: &mut Server, game: &mut Game, id: &u16) -> Option<Packet> 
     {
-        self.x += (self.dir * 8) as i32;
+        self.x += (self.dir * 12) as i32;
         
         self.timer -= 1;
         if self.timer <= 0 || self.x <= 0 {

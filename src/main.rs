@@ -1,3 +1,5 @@
+use std::{thread, time::Duration};
+
 use server::Server;
 
 mod packet;
@@ -14,7 +16,9 @@ fn main()
     log4rs::init_file("logging_config.yaml", Default::default()).unwrap();
 
     let _server = Server::start("0.0.0.0:7606", "0.0.0.0:8606");
+    let dur = Duration::from_secs(2);
+    
     loop {
-        
+        thread::sleep(dur);
     }
 }
