@@ -148,7 +148,6 @@ impl State for Game
     {
         let passtrough = packet.ru8() != 0; //TODO: get rid of
         let tp = packet.rpk();
-        debug!("TCP Recv {:?}", tp);
 
         if !peer.lock().unwrap().pending {
             peer.lock().unwrap().timer = 0;
@@ -693,7 +692,7 @@ impl Game
                 let mut peer = peer.lock().unwrap();
                 id = peer.id();
 
-                let mut player = peer.player.as_mut().unwrap();
+                let player = peer.player.as_mut().unwrap();
                 death_timer = player.death_timer;
 
                 if !player.dead || player.escaped || player.revival_times >= 2 {
@@ -801,7 +800,7 @@ impl Game
             return;
         }
 
-        let count = real_peers!(server).count();
+        let count = real_peers!(server).count() as i32;
         if (count - alive) + escaped >= count {
             if escaped == 0 {
                 self.end(server, Ending::ExeWin);

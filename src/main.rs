@@ -1,17 +1,15 @@
-use std::{thread, time::Duration};
+use std::{net::TcpListener, sync::{Mutex, Arc}, ops::AddAssign};
 
 use chrono::Utc;
 use config::CONFIG;
-use gui::GUI;
-use log::LevelFilter;
+use log::{LevelFilter, error, warn};
 use log4rs::{append::{console::ConsoleAppender, file::FileAppender}, encode::pattern::PatternEncoder, Config, config::{Appender, Root}};
 use server::Server;
 
 mod config;
-mod gui;
 mod server;
 mod packet;
-
+mod gui;
 mod map;
 mod entity;
 mod state;
@@ -36,20 +34,51 @@ fn init_logger()
     log4rs::init_config(config).unwrap();
 }
 
-fn main() 
+fn find_free_server(servers: &mut Vec<Arc<Mutex<Server>>>, port: &mut u16) -> Arc<Mutex<Server>>
 {
-    init_logger();
-
-    let _server = Server::start("0.0.0.0:7606", "0.0.0.0:8606");
-
-    if CONFIG.gui {
-        let mut gui = GUI::new();
-        gui.run();
-    }
-    else {
-        let dur = Duration::from_secs(2);
-        loop {
-            thread::sleep(dur);
+    for server in servers.iter()
+    {
+        if server.lock().unwrap().peers.read().unwrap().len() < 7 {
+            return server.clone();
         }
+    }
+
+    port.add_assign(1);
+    let server = Server::start(*port);
+    servers.push(server.clone());
+
+    server
+}
+
+fn main()
+{
+    let mut servers: Vec<Arc<Mutex<Server>>> = Vec::new();
+    let mut port = CONFIG.server.udp_port;
+
+    init_logger();
+    
+    let listner = match TcpListener::bind(format!("0.0.0.0:{}", CONFIG.server.tcp_port))
+    {
+        Ok(res) => res,
+        Err(err) => {
+            error!("Failed to bind socket: {}", err);
+            return;
+        }
+    };
+
+    servers.push(Server::start(CONFIG.server.udp_port));
+    for stream in listner.incoming()
+    {
+        // If failed to open a stream, ignore
+        let stream = match stream {
+            Ok(res) => res,
+            Err(err) => {
+                warn!("Failed to open stream: {}", err);
+                continue;
+            }
+        };
+
+        let server = find_free_server(&mut servers, &mut port);
+        Server::peer_redirect(server, stream);
     }
 }

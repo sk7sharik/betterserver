@@ -1,0 +1,74 @@
+import { TabWidget , HorizontalBox, VerticalBox, ListView, GroupBox, Button, ScrollView} from "std-widgets.slint";
+
+export component HelloWorld inherits Window
+{
+    width: 960px;
+    height: 480px;
+    title: "Better Server GUI";
+
+    TabWidget {
+        Tab {
+            title: "General";
+
+            VerticalBox { 
+                spacing: 4px;
+
+                HorizontalBox { 
+                    spacing: 4px;
+                    
+                    GroupBox { 
+                        title: "Logs";
+                        width: 80%;
+
+                        ScrollView { 
+                            ListView { 
+                            
+                            }
+                        }
+                    }
+
+                    GroupBox { 
+                        title: "Players";
+
+                        ListView {
+                            
+                        }
+                    }                    
+                }
+
+                GroupBox {
+                    title: "Control panel";
+                    height: 15%;
+
+                    HorizontalBox {
+                        spacing: 20px;
+
+                        Button { 
+                            text: "Back to lobby";
+                        }
+                        
+                        Button { 
+                            text: "Back to lobby";
+                        }
+
+                        Button { 
+                            text: "Back to lobby";
+                        }
+
+                        Button { 
+                            text: "Back to lobby";
+                        }
+                    }
+                }
+            }
+        }
+
+        Tab {
+            title: "Options";
+        }
+
+        Tab {
+            title: "Help";
+        }
+    }    
+}

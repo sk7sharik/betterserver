@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use log::info;
+use log::{info, debug};
 use num_traits::FromPrimitive;
 use rand::{thread_rng, Rng};
 
@@ -51,8 +51,7 @@ impl State for CharacterSelect
     fn tick(&mut self, server: &mut Server) -> Option<Box<dyn State>> 
     {
         if self.heartbeat_timer >= 60 {
-            let mut packet = Packet::new(PacketType::SERVER_HEARTBEAT);
-            server.multicast(&mut packet);
+            server.multicast(&mut Packet::new(PacketType::SERVER_HEARTBEAT));
 
             for peer in real_peers!(server) {
                 let mut peer = peer.lock().unwrap();

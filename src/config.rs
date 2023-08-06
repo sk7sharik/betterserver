@@ -1,15 +1,14 @@
 use std::fs;
 
-use log::warn;
 use serde::{Serialize, Deserialize};
 use lazy_static::lazy_static;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct ServerConfiguration 
 {
-    pub count: i32,
-    pub tcp_port: i32,
-    pub udp_port: i32
+    pub tcp_port: u16,
+    pub udp_port: u16,
+    pub grow: bool
 }
 
 #[derive(Serialize, Deserialize)]
@@ -22,16 +21,16 @@ pub(crate) struct Configuration
 
 const DEFAULT_CONFIG: Configuration = Configuration { 
     server: ServerConfiguration {
-        count: 1,
         tcp_port: 7606,
-        udp_port: 8606
+        udp_port: 8606,
+        grow: false
     },
 
     gui: true,
     debug: true,
 };
 
- lazy_static! {
+lazy_static! {
     pub(crate) static ref CONFIG: Configuration = init_config();
 }
 

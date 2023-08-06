@@ -14,7 +14,7 @@ pub(crate) trait State: Send + Sync
     fn got_tcp_packet(&mut self, _server: &mut Server, _peer: Arc<Mutex<Peer>>, _packet: &mut Packet) -> Option<Box<dyn State>>;
     fn got_udp_packet(&mut self, _server: &mut Server, _addr: &SocketAddr, _packet: &mut Packet) -> Option<Box<dyn State>> { None }
 
-    fn handle_identity(&mut self, _server: &mut Server, peer: &mut Peer, packet: &mut Packet, accept: bool) 
+    fn handle_identity(&mut self, server: &mut Server, peer: &mut Peer, packet: &mut Packet, accept: bool) 
     {
         if !peer.pending {
             peer.disconnect("Second identity attempt.");
@@ -29,7 +29,7 @@ pub(crate) trait State: Send + Sync
 
         let nickname = packet.rstr();
         if nickname.len() > 15 {
-            peer.nickname = nickname[..16].to_string();
+            peer.nickname = nickname.chars().take(15).collect();
         }
         else {
             peer.nickname = nickname;
@@ -48,6 +48,7 @@ pub(crate) trait State: Send + Sync
         
         let mut packet = Packet::new(PacketType::SERVER_IDENTITY_RESPONSE);
         packet.wu8(accept as u8);
+        packet.wu16(server.udp_port);
         packet.wu16(peer.id());
         peer.send(&mut packet);
     }

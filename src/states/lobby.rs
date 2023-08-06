@@ -25,6 +25,7 @@ impl State for Lobby
             if peer.in_queue {
                 let mut packet = Packet::new(PacketType::SERVER_IDENTITY_RESPONSE);
                 packet.wu8(true as u8);
+                packet.wu16(server.udp_port);
                 packet.wu16(peer.id());
                 peer.send(&mut packet);
 
@@ -179,7 +180,7 @@ impl State for Lobby
     fn connect(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>) -> Option<Box<dyn State>>
     {
         //TODO: queue
-        if server.peers.read().unwrap().len() >= 7 {
+        if server.peers.read().unwrap().len() > 7 {
             peer.lock().unwrap().disconnect("Server is full: 7/7.");
             return None;
         }
