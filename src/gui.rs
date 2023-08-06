@@ -1,4 +1,0 @@
-slint::slint!
-{
-    
-}

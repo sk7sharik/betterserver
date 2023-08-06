@@ -9,7 +9,6 @@ use server::Server;
 mod config;
 mod server;
 mod packet;
-mod gui;
 mod map;
 mod entity;
 mod state;
