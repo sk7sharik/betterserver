@@ -120,7 +120,7 @@ impl State for Game
         None
     }
 
-    fn connect(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>) -> Option<Box<dyn State>>
+    fn connect(&mut self, _server: &mut Server, _peer: Arc<Mutex<Peer>>) -> Option<Box<dyn State>>
     {
         None
     }
@@ -135,6 +135,11 @@ impl State for Game
         let mut packet = Packet::new(PacketType::SERVER_PLAYER_LEFT);
         packet.wu16(id);
         server.multicast_except(&mut packet, id);
+
+        if peer.lock().unwrap().player.as_ref().unwrap().exe {
+            self.end(server, Ending::SurvWin);
+            return None;
+        }
 
         if real_peers!(server).count() <= 1 {
             return Some(Box::new(Lobby::new()));

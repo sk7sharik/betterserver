@@ -2,7 +2,7 @@ use std::{net::TcpListener, sync::{Mutex, Arc}, ops::AddAssign};
 
 use chrono::Utc;
 use config::CONFIG;
-use log::{LevelFilter, error, warn};
+use log::{LevelFilter, error, warn, info};
 use log4rs::{append::{console::ConsoleAppender, file::FileAppender}, encode::pattern::PatternEncoder, Config, config::{Appender, Root}};
 use server::Server;
 
@@ -36,27 +36,37 @@ fn init_logger()
 
 fn find_free_server(servers: &mut Vec<Arc<Mutex<Server>>>, port: &mut u16) -> Arc<Mutex<Server>>
 {
-    for server in servers.iter()
+    if CONFIG.server.grow
     {
-        if server.lock().unwrap().peers.read().unwrap().len() < 7 {
-            return server.clone();
+        for server in servers.iter()
+        {
+            if server.lock().unwrap().peers.read().unwrap().len() < 7 {
+                return server.clone();
+            }
         }
+        
+        if servers.len() >= CONFIG.server.grow_limit as usize {
+            return servers.last().unwrap().clone();
+        }
+
+        port.add_assign(1);
+        let server = Server::start(*port);
+        servers.push(server.clone());
+
+        info!("Growing servers...");
+        server
     }
-
-    port.add_assign(1);
-    let server = Server::start(*port);
-    servers.push(server.clone());
-
-    server
+    else {
+        return servers.get(0).unwrap().clone();
+    }
 }
 
 fn main()
 {
+    init_logger();
+
     let mut servers: Vec<Arc<Mutex<Server>>> = Vec::new();
     let mut port = CONFIG.server.udp_port;
-
-    init_logger();
-    
     let listner = match TcpListener::bind(format!("0.0.0.0:{}", CONFIG.server.tcp_port))
     {
         Ok(res) => res,

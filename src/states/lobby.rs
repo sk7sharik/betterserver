@@ -75,12 +75,13 @@ impl State for Lobby
                 server.multicast(&mut Packet::new(PacketType::SERVER_HEARTBEAT));
             
                 self.heartbeat_timer = 0;
-                debug!("[Lobby] Heartbeat done.");
             }
         }
 
         // Handle countdown
         if self.countdown {
+            self.countdown_timer -= 1;
+
             // Set state to map vote
             if self.countdown_timer <= 0 {
                 return Some(Box::new(MapVote::new()));
@@ -92,8 +93,6 @@ impl State for Lobby
                 packet.wu8((self.countdown_timer / 60) as u8);
                 server.multicast(&mut packet);
             }
-
-            self.countdown_timer -= 1;
         }
 
         None

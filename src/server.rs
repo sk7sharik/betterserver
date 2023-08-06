@@ -177,8 +177,6 @@ impl Server {
                         break;
                     }
                 }
-                
-                let start = Instant::now();
 
                 // Check connection close
                 if read <= 0 {
@@ -211,8 +209,6 @@ impl Server {
                         }
                     }
                 }
-
-                info!("Elasped: {}ns", start.elapsed().as_nanos());
             }
         });
 
@@ -297,7 +293,6 @@ impl Server {
     pub fn multicast(&mut self, packet: &mut Packet) {
         for i in self.peers.read().unwrap().iter() {
             i.1.lock().unwrap().send(packet);
-            debug!("Sent packet to {}", *i.0);
         }
     }
 
@@ -308,7 +303,6 @@ impl Server {
             }
 
             i.1.lock().unwrap().send(packet);
-            debug!("Sent packet to {}", *i.0);
         }
     }
 
@@ -319,7 +313,6 @@ impl Server {
             }
 
             i.1.lock().unwrap().send(packet);
-            debug!("Sent packet to {}", *i.0);
         }
     }
 
@@ -334,7 +327,6 @@ impl Server {
             }
 
             i.1.lock().unwrap().send(packet);
-            debug!("Sent packet to {}", *i.0);
         }
     }
 

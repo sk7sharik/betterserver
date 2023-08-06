@@ -8,7 +8,8 @@ pub(crate) struct ServerConfiguration
 {
     pub tcp_port: u16,
     pub udp_port: u16,
-    pub grow: bool
+    pub grow: bool,
+    pub grow_limit: u16
 }
 
 #[derive(Serialize, Deserialize)]
@@ -23,7 +24,8 @@ const DEFAULT_CONFIG: Configuration = Configuration {
     server: ServerConfiguration {
         tcp_port: 7606,
         udp_port: 8606,
-        grow: false
+        grow: false,
+        grow_limit: 16
     },
 
     gui: true,
