@@ -35,10 +35,8 @@ fn init_logger()
 
 fn find_free_server(servers: &mut Vec<Arc<Mutex<Server>>>, port: &mut u16) -> Arc<Mutex<Server>>
 {
-    if CONFIG.server.grow
-    {
-        for server in servers.iter()
-        {
+    if CONFIG.server.grow {
+        for server in servers.iter() {
             if server.lock().unwrap().peers.read().unwrap().len() < 7 {
                 return server.clone();
             }
