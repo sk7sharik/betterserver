@@ -23,16 +23,6 @@ then
     echo ":: Cloning repository..."
     git clone https://github.com/teamexeempire/betterserver.git "$TARGETDIR"
     cd "$TARGETDIR"
-
-    printf ":: Would you like to do additional configuration? (y/n): "
-    read CHOICE
-
-    if [ "$CHOICE" = "y" ];
-    then
-        nano "config.toml"
-    else
-        echo ":: No additional changes were made!"
-    fi 
 else
     cd "$TARGETDIR"
     echo ":: Updating repository..."
