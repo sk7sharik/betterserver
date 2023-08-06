@@ -39,7 +39,7 @@ macro_rules! check_state {
 // Peers that aren't in queue
 macro_rules! real_peers {
     ($server: expr) => {
-        $server.peers.clone().read().unwrap().values().filter(|x| !x.lock().unwrap().in_queue)
+        $server.peers.clone().read().unwrap().values().filter(|x| { let peer = x.lock().unwrap(); return !peer.in_queue && !peer.pending})
     };
 }
 

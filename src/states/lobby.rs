@@ -264,7 +264,7 @@ impl Lobby
 
     fn check_ready(&mut self, server: &mut Server) 
     {
-        let count = server.peers.read().unwrap().len();
+        let count = server.peers.read().unwrap().values().filter(|x| !x.lock().unwrap().pending).count();
         if count == 1 {
             if self.countdown {
                 self.countdown = false;
@@ -279,7 +279,8 @@ impl Lobby
         let mut ready_count = 0;
         {
             for peer in server.peers.read().unwrap().values() {
-                if peer.lock().unwrap().ready {
+                let peer = peer.lock().unwrap();
+                if peer.ready && !peer.pending {
                     ready_count += 1;
                 }
             }
