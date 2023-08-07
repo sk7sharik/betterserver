@@ -72,7 +72,7 @@ impl State for Lobby
                 }          
             
                 // Heartbeat
-                server.multicast(&mut Packet::new(PacketType::SERVER_HEARTBEAT));
+                server.multicast_real(&mut Packet::new(PacketType::SERVER_HEARTBEAT));
             
                 self.heartbeat_timer = 0;
             }
@@ -91,7 +91,7 @@ impl State for Lobby
                 let mut packet = Packet::new(PacketType::SERVER_LOBBY_COUNTDOWN);
                 packet.wu8(self.countdown as u8);
                 packet.wu8((self.countdown_timer / 60) as u8);
-                server.multicast(&mut packet);
+                server.multicast_real(&mut packet);
             }
         }
 
@@ -153,7 +153,7 @@ impl State for Lobby
                 let mut packet = Packet::new(PacketType::SERVER_LOBBY_READY_STATE);
                 packet.wu16(id);
                 packet.wu8(ready as u8);
-                server.multicast_except(&mut packet, id);
+                server.multicast_real_except(&mut packet, id);
 
                 peer.lock().unwrap().ready = ready;
                 self.check_ready(server);
@@ -162,7 +162,7 @@ impl State for Lobby
             // Peer's chat message
             PacketType::CLIENT_CHAT_MESSAGE => {
                 // Remulitcast the message
-                server.multicast_except(packet, id);
+                server.multicast_real_except(packet, id);
 
                 let _id = packet.ru16(); //TODO: get rid of
                 let msg = packet.rstr();
@@ -273,7 +273,7 @@ impl Lobby
                 let mut packet = Packet::new(PacketType::SERVER_LOBBY_COUNTDOWN);
                 packet.wu8(self.countdown as u8);
                 packet.wu8(0);
-                server.multicast(&mut packet);
+                server.multicast_real(&mut packet);
             }
             return;
         }
@@ -296,7 +296,7 @@ impl Lobby
             let mut packet = Packet::new(PacketType::SERVER_LOBBY_COUNTDOWN);
             packet.wu8(self.countdown as u8);
             packet.wu8((self.countdown_timer / 60) as u8);
-            server.multicast(&mut packet);
+            server.multicast_real(&mut packet);
         } else {
             if self.countdown {
                 self.countdown = false;
@@ -305,7 +305,7 @@ impl Lobby
                 let mut packet = Packet::new(PacketType::SERVER_LOBBY_COUNTDOWN);
                 packet.wu8(self.countdown as u8);
                 packet.wu8((self.countdown_timer / 60) as u8);
-                server.multicast(&mut packet);
+                server.multicast_real(&mut packet);
             }
         }
     }
