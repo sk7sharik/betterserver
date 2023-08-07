@@ -204,16 +204,11 @@ impl State for Lobby
 
     fn connect(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>) -> Option<Box<dyn State>>
     {
-        //TODO: queue
         if server.peers.read().unwrap().len() > 7 {
             peer.lock().unwrap().disconnect("Server is full: 7/7.");
             return None;
         }
 
-        let id = peer.lock().unwrap().id();
-        let mut packet = Packet::new(PacketType::SERVER_PLAYER_JOINED);
-        packet.wu16(id);
-        server.multicast_except(&mut packet, id);
         None
     }
 
@@ -253,7 +248,7 @@ impl Lobby
 
     fn share_player(&mut self, server: &mut Server, peer: &mut Peer) 
     {
-        let mut packet = Packet::new(PacketType::SERVER_PLAYER_INFO);
+        let mut packet = Packet::new(PacketType::SERVER_PLAYER_JOINED);
         packet.wu16(peer.id());
         packet.wstr(&peer.nickname);
         packet.wu8(peer.lobby_icon);
