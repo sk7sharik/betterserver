@@ -38,7 +38,6 @@ impl State for CharacterSelect
             let mut peer = peer.lock().unwrap();
             peer.player = Some(Player::new()); // new player
             peer.player.as_mut().unwrap().exe = self.exe == peer.id();
-            peer.exe_chance = thread_rng().gen_range(0..2);
             peer.timer = 30;
         }
 
@@ -218,7 +217,7 @@ impl CharacterSelect
     fn choose_exe(&mut self, server: &mut Server) -> u16 
     {
         let mut chances: HashMap<u16, u32> = HashMap::new();
-        let mut weight: u32 = 0;
+        let mut weight: u32 = 1;
 
         for peer in real_peers!(server) {
             let peer = peer.lock().unwrap();
