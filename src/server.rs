@@ -46,7 +46,7 @@ macro_rules! real_peers {
 macro_rules! assert_or_disconnect {
     ($expr: expr, $peer: expr) => {
         if (!$expr) {
-            $peer.disconnect(format!("assert_or_disconnect failed: \"{}\"!", stringify!($expr)).as_str());
+            $peer.disconnect(format!("assert_or_disconnect failed: \'{}\'! ", stringify!($expr)).as_str());
             return None;
         }
     };
@@ -58,22 +58,25 @@ pub(crate) use assert_or_disconnect;
 
 pub(crate) struct Server
 {
+    pub udp_port: u16,
+    pub name: String,
     pub peers: Arc<RwLock<HashMap<u16, Arc<Mutex<Peer>>>>>,
     pub state: Arc<Mutex<Box<dyn State>>>,
     pub udp_socket: Arc<Mutex<UdpSocket>>,
-    pub udp_port: u16,
     
     id_count: Arc<Mutex<Wrapping<u16>>>,
     next_state: Arc<Mutex<Option<Mutex<Box<Box<dyn State + 'static>>>>>>
 }
 
 impl Server {
-    pub fn start(udp_port: u16) -> Arc<Mutex<Server>> 
+    pub fn start(udp_port: u16, name: String) -> Arc<Mutex<Server>> 
     {
         let server = Arc::new(Mutex::new(Server {
+            udp_port: udp_port,
+            name: name.clone(),
+            
             peers: Arc::new(RwLock::new(HashMap::new())), 
             state: Arc::new(Mutex::new(Box::new(Lobby::new()))), // Default state - Lobby
-            udp_port,
 
             udp_socket: Arc::new(Mutex::new(UdpSocket::bind(format!("0.0.0.0:{}", udp_port)).unwrap())), 
             id_count: Arc::new(Mutex::new(Wrapping(0))),
@@ -84,7 +87,7 @@ impl Server {
         // Tick thread
         let server_clone = server.clone();
         let state_clone = server.lock().unwrap().state.clone();
-        thread::spawn(move || {
+        let _ = thread::Builder::new().name(name.clone()).spawn(move || {
             Server::tick_worker(state_clone, server_clone);
         });
 
@@ -93,68 +96,69 @@ impl Server {
         let server_clone = server.clone();
         let state = server.lock().unwrap().state.clone();
 
-        thread::spawn(move || {
+        let _ = thread::Builder::new().name(name.clone()).spawn(move || {
             Server::udp_worker(server_clone, state, listener_clone);
         });
 
-        info!("Server listening at (UDP {})", udp_port);
+        info!("Listening at (UDP {})", udp_port);
         server
     }
 
     pub fn peer_redirect(server: Arc<Mutex<Server>>, stream: TcpStream) -> bool
     {
-        let stream = Arc::new(Mutex::new(stream));
-        let addr = stream.lock().unwrap().peer_addr().unwrap();
-        let state = server.lock().unwrap().state.clone();
+        let name = server.lock().unwrap().name.clone();
+        let _ = thread::Builder::new().name(name).spawn(move || {
+            let stream = Arc::new(Mutex::new(stream));
+            let addr = stream.lock().unwrap().peer_addr().unwrap();
+            let state = server.lock().unwrap().state.clone();
 
-        // Generate ID
-        let mut _id: u16 = 1;
-        {
-            let server = server.lock().unwrap();
-            let mut id_count = server.id_count.lock().unwrap();
-            id_count.add_assign(1);
+            // Generate ID
+            let mut _id: u16 = 1;
+            {
+                let server = server.lock().unwrap();
+                let mut id_count = server.id_count.lock().unwrap();
+                id_count.add_assign(1);
 
-            if id_count.0 == 0 {
-                id_count.0 = 1;
+                if id_count.0 == 0 {
+                    id_count.0 = 1;
+                }
+
+                _id = id_count.0;
             }
 
-            _id = id_count.0;
-        }
+            trace!("New connection from {:?} (ID {})", addr, _id);
+            let stream_clone = match stream.lock().unwrap().try_clone() {
+                Ok(res) => res,
+                Err(err) => {
+                    warn!("Failed to open stream for {:?}: {}", addr, err);
+                    return false;
+                }
+            };
 
-        trace!("New connection from {:?} (ID {})", addr, _id);
-        let stream_clone = match stream.lock().unwrap().try_clone() {
-            Ok(res) => res,
-            Err(err) => {
-                warn!("Failed to open stream for {:?}: {}", addr, err);
-                return false;
-            }
-        };
+            // Create new peer
+            let peer = Peer { 
+                id: _id.clone(), 
+                stream: stream_clone, 
+                addr, 
+                nickname: String::new(),
+                udid: String::new(),
+                exe_chance: thread_rng().gen_range(2..5),
+                timer: 0, 
+                lobby_icon: 0, 
+                pet: 0,
+                pending: true,
+                in_queue: true,
+                ready: false,
+                player: None
+            };
 
-        // Create new peer
-        let peer = Peer { 
-            id: _id.clone(), 
-            stream: stream_clone, 
-            addr, 
-            nickname: String::new(),
-            udid: String::new(),
-            exe_chance: thread_rng().gen_range(2..5),
-            timer: 0, 
-            lobby_icon: 0, 
-            pet: 0,
-            pending: true,
-            in_queue: true,
-            ready: false,
-            player: None
-        };
+            // Listen for messages
+            let peer = Arc::new(Mutex::new(peer));
+            let peers = server.lock().unwrap().peers.clone();
+            let server = server.clone();
+            info!("{:?} connected. (ID {})", peer.lock().unwrap().addr(), _id);
+            Server::connected(&mut server.lock().unwrap(), state.clone(), peer.clone());
 
-        // Listen for messages
-        let peer = Arc::new(Mutex::new(peer));
-        let peers = server.lock().unwrap().peers.clone();
-        let server = server.clone();
-        info!("{:?} connected. (ID {})", peer.lock().unwrap().addr(), _id);
-        Server::connected(&mut server.lock().unwrap(), state.clone(), peer.clone());
-
-        thread::spawn(move || {
             let mut in_buffer = [0; 256];
 
             let mut pak_buffer: Vec<u8> = Vec::new();
@@ -171,7 +175,7 @@ impl Server {
                         
                         peers.write().unwrap().remove(&_id);
                         Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer.clone());
-                        break;
+                        break true;
                     }
                 }
 
@@ -181,7 +185,7 @@ impl Server {
 
                     peers.write().unwrap().remove(&_id);
                     Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer.clone());
-                    break;
+                    break true;
                 }
 
                 let mut pos = 0;
@@ -197,7 +201,7 @@ impl Server {
                         pos += 1;
 
                         if pak_size <= 0 {
-                            debug!("Packet ok");
+                            debug!("Packet ok (len {})", pak_size);
 
                             let mut pak = Packet::from(&pak_buffer, pak_buffer.len());
                             Server::got_tcp_packet(&mut server.lock().unwrap(), state.clone(), peer.clone(), &mut pak);

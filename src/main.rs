@@ -1,4 +1,4 @@
-use std::{net::TcpListener, sync::{Mutex, Arc}, ops::AddAssign};
+use std::{net::TcpListener, sync::{Mutex, Arc}, ops::AddAssign, fmt::format};
 
 use chrono::Utc;
 use config::CONFIG;
@@ -18,9 +18,12 @@ mod states;
 
 fn init_logger()
 {
-    let console = ConsoleAppender::builder().encoder(Box::new(PatternEncoder::default())).build();
+    let console = ConsoleAppender::builder()
+    .encoder(Box::new(PatternEncoder::new("[{h({l})} {T} {d(%Y-%m-%d %H:%M:%S)}] {m} {n}")))
+    .build();
+
     let logfile = FileAppender::builder()
-    .encoder(Box::new(PatternEncoder::default()))
+    .encoder(Box::new(PatternEncoder::new("[{h({l})} {T} {d(%Y-%m-%d %H:%M:%S)}] {m} {n}")))
     .build(format!("logs/{}.log", Utc::now().format("%Y-%m-%d %H-%M-%S")))
     .unwrap();
 
@@ -43,15 +46,17 @@ fn find_free_server(servers: &mut Vec<Arc<Mutex<Server>>>, port: &mut u16) -> Ar
         }
         
         if servers.len() >= CONFIG.server.grow_limit as usize {
+            warn!("Couldn't allocate new server: FULL ({}/{})!", servers.len(), CONFIG.server.grow_limit);
             return servers.last().unwrap().clone();
         }
 
+        info!("Allocating new server ({}/{})!", servers.len() + 1, CONFIG.server.grow_limit);
+
         port.add_assign(1);
-        let server = Server::start(*port);
+        let server = Server::start(*port, format!("server {}", servers.len()));
         servers.push(server.clone());
 
-        info!("Growing servers...");
-        server
+        return server;
     }
     else {
         return servers.get(0).unwrap().clone();
@@ -73,7 +78,7 @@ fn main()
         }
     };
 
-    servers.push(Server::start(CONFIG.server.udp_port));
+    servers.push(Server::start(CONFIG.server.udp_port, "server 0".to_string()));
     for stream in listner.incoming()
     {
         // If failed to open a stream, ignore
