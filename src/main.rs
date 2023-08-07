@@ -53,7 +53,7 @@ fn find_free_server(servers: &mut Vec<Arc<Mutex<Server>>>, port: &mut u16) -> Ar
         info!("Allocating new server ({}/{})!", servers.len() + 1, CONFIG.server.grow_limit);
 
         port.add_assign(1);
-        let server = Server::start(*port, format!("server {}", servers.len()));
+        let server = Server::start(*port, format!("server{}", servers.len()));
         servers.push(server.clone());
 
         return server;
@@ -78,7 +78,7 @@ fn main()
         }
     };
 
-    servers.push(Server::start(CONFIG.server.udp_port, "server 0".to_string()));
+    servers.push(Server::start(CONFIG.server.udp_port, "server0".to_string()));
     for stream in listner.incoming()
     {
         // If failed to open a stream, ignore
