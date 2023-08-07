@@ -162,7 +162,8 @@ impl Server {
             let mut in_buffer = [0; 256];
 
             let mut pak_buffer: Vec<u8> = Vec::new();
-            let mut pak_size: usize = 0;
+            let mut pak_size: usize = 0; 
+            let mut pak_exsize: usize = 0;
 
             loop {
                 // Reading incoming messages
@@ -192,6 +193,8 @@ impl Server {
                 while pos < read {
                     if pak_size <= 0 {
                         pak_size = in_buffer[pos] as usize;
+                        pak_exsize = pak_size.clone();
+
                         pak_buffer.clear();
                         pos += 1;
                     }
@@ -201,7 +204,7 @@ impl Server {
                         pos += 1;
 
                         if pak_size <= 0 {
-                            debug!("Packet ok (len {})", pak_size);
+                            debug!("Packet ok (len {})", pak_exsize);
 
                             let mut pak = Packet::from(&pak_buffer, pak_buffer.len());
                             Server::got_tcp_packet(&mut server.lock().unwrap(), state.clone(), peer.clone(), &mut pak);
