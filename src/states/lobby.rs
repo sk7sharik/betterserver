@@ -117,6 +117,7 @@ impl State for Lobby
                 self.handle_identity(server, &mut peer.lock().unwrap(), packet, true);
                 self.accept_player(&mut peer.lock().unwrap());
                 self.share_player(server, &mut peer.lock().unwrap());
+                self.check_ready(server);
             },
 
             // Peer requests player list
@@ -190,7 +191,6 @@ impl State for Lobby
         let mut packet = Packet::new(PacketType::SERVER_PLAYER_JOINED);
         packet.wu16(id);
         server.multicast_except(&mut packet, id);
-        self.check_ready(server);
         None
     }
 
