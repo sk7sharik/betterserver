@@ -529,6 +529,31 @@ impl State for Game
         let pid = packet.ru16();
         let tp = packet.rpk();
 
+        match tp {
+            PacketType::CLIENT_PLAYER_DATA => {
+                if self.started { 
+                    let pak = &packet.raw()[3..];
+                    server.udp_multicast_except(&self.recp, &mut Packet::headless(PacketType::CLIENT_PLAYER_DATA, pak, pak.len()), addr);
+                }
+            },
+
+            PacketType::CLIENT_PING => {
+                let ping = packet.ru64();
+                let calc = packet.ru16();
+
+                let mut packet = Packet::new(PacketType::SERVER_PONG);
+                packet.wu64(ping);
+                server.udp_send(addr, &mut packet);
+
+                let mut packet = Packet::new(PacketType::SERVER_GAME_PING);
+                packet.wu16(pid);
+                packet.wu16(calc);
+                server.udp_multicast_except(&self.recp, &mut packet, addr);
+            },
+
+            _ => {}
+        }
+
         if !self.started {
             if !self.recp.contains_key(&pid) {
                 match server.peers.read().unwrap().get(&pid) {
@@ -559,29 +584,6 @@ impl State for Game
             }
 
             return None;
-        }
-
-        match tp {
-            PacketType::CLIENT_PLAYER_DATA => {
-                let pak = &packet.raw()[3..];
-                server.udp_multicast_except(&self.recp, &mut Packet::headless(PacketType::CLIENT_PLAYER_DATA, pak, pak.len()), addr);
-            },
-
-            PacketType::CLIENT_PING => {
-                let ping = packet.ru64();
-                let calc = packet.ru16();
-
-                let mut packet = Packet::new(PacketType::SERVER_PONG);
-                packet.wu64(ping);
-                server.udp_send(addr, &mut packet);
-
-                let mut packet = Packet::new(PacketType::SERVER_GAME_PING);
-                packet.wu16(pid);
-                packet.wu16(calc);
-                server.udp_multicast_except(&self.recp, &mut packet, addr);
-            },
-
-            _ => {}
         }
 
         self.entity_check_destroy(server);

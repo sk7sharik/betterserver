@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use log::{info, debug};
 use num_traits::FromPrimitive;
+use rand::seq::IteratorRandom;
 use rand::{thread_rng, Rng};
 
 use crate::map::Map;
@@ -216,24 +217,15 @@ impl CharacterSelect
 
     fn choose_exe(&mut self, server: &mut Server) -> u16 
     {
-        let mut chances: HashMap<u16, u32> = HashMap::new();
-        let mut weight: u32 = 1;
-
-        for peer in real_peers!(server) {
-            let peer = peer.lock().unwrap();
-            weight += peer.exe_chance as u32;
-
-            chances.insert(peer.id(), weight);
-        }
-
-        let rnd: f32 = thread_rng().gen_range(0f32..weight as f32);
-        for chance in chances {
-            if chance.1 as f32 >= rnd {
-                return chance.0;
+        loop {
+            for peer in real_peers!(server) {
+                let peer = peer.lock().unwrap();
+                
+                if thread_rng().gen_ratio(peer.exe_chance as u32, 100u32) {
+                    return peer.id();
+                }
             }
         }
-
-        0
     }
 
     fn check_remaining(&mut self, server: &mut Server) -> Option<Box<dyn State>> 
