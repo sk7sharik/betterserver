@@ -177,7 +177,6 @@ impl State for Lobby
                 {
                     let peer =  &mut peer.lock().unwrap();
                     assert_or_disconnect!(!peer.pending, peer);
-                    assert_or_disconnect!(!passtrough, peer);
                 }
 
                 // Remulitcast the message
