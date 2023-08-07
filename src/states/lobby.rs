@@ -1,7 +1,7 @@
 use std::sync::{Mutex, Arc};
 use log::{debug, info};
 use rand::{thread_rng, Rng};
-use crate::{state::State, server::{Server, Peer}, packet::{Packet, PacketType, self}};
+use crate::{state::State, server::{Server, Peer, real_peers}, packet::{Packet, PacketType, self}};
 
 use super::mapvote::MapVote;
 
@@ -104,7 +104,7 @@ impl State for Lobby
         let tp = packet.rpk();
 
         debug!("Got packet {:?}", tp);
-        
+
         if !peer.lock().unwrap().pending {
             peer.lock().unwrap().timer = 0;
         }
@@ -266,7 +266,7 @@ impl Lobby
 
     fn check_ready(&mut self, server: &mut Server) 
     {
-        let count = server.peers.read().unwrap().values().filter(|x| !x.lock().unwrap().pending).count();
+        let count = real_peers!(server).count();
         if count == 1 {
             if self.countdown {
                 self.countdown = false;
@@ -280,9 +280,9 @@ impl Lobby
 
         let mut ready_count = 0;
         {
-            for peer in server.peers.read().unwrap().values() {
+            for peer in real_peers!(server) {
                 let peer = peer.lock().unwrap();
-                if peer.ready && !peer.pending {
+                if peer.ready {
                     ready_count += 1;
                 }
             }
