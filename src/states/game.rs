@@ -154,6 +154,8 @@ impl State for Game
         let passtrough = packet.ru8() != 0; //TODO: get rid of
         let tp = packet.rpk();
 
+        debug!("Got packet {:?}", tp);
+
         if !peer.lock().unwrap().pending {
             peer.lock().unwrap().timer = 0;
         }

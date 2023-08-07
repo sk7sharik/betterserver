@@ -115,6 +115,8 @@ impl State for CharacterSelect
     {
         let passtrough = packet.ru8() != 0;
         let tp = packet.rpk();
+        
+        debug!("Got packet {:?}", tp);
 
         let id = peer.lock().unwrap().id();
         match tp

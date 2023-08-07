@@ -103,6 +103,8 @@ impl State for Lobby
         let _passtrough = packet.ru8(); //TODO: get rid of
         let tp = packet.rpk();
 
+        debug!("Got packet {:?}", tp);
+        
         if !peer.lock().unwrap().pending {
             peer.lock().unwrap().timer = 0;
         }

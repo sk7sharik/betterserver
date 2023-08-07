@@ -117,6 +117,8 @@ impl State for MapVote
         let passtrough = packet.ru8() != 0;
         let tp = packet.rpk();
 
+        debug!("Got packet {:?}", tp);
+
         if !peer.lock().unwrap().pending {
             peer.lock().unwrap().timer = 0;
         }
