@@ -267,7 +267,7 @@ impl Lobby
     fn check_ready(&mut self, server: &mut Server) 
     {
         let count = real_peers!(server).count();
-        if count == 1 {
+        if count <= 1 {
             if self.countdown {
                 self.countdown = false;
                 let mut packet = Packet::new(PacketType::SERVER_LOBBY_COUNTDOWN);
