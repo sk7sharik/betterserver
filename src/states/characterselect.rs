@@ -124,12 +124,16 @@ impl State for CharacterSelect
             // Peer's identity
             PacketType::IDENTITY => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
-                self.handle_identity(server, &mut peer.lock().unwrap(), packet, false);
+                self.handle_identity(server, peer, packet, false);
             },
 
             PacketType::CLIENT_REQUEST_CHARACTER => {
-                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
-                assert_or_disconnect!(self.exe != id, &mut peer.lock().unwrap());
+                {
+                    let peer =  &mut peer.lock().unwrap();
+                    assert_or_disconnect!(!peer.pending, peer);
+                    assert_or_disconnect!(!passtrough, peer);
+                    assert_or_disconnect!(self.exe != id, peer);
+                }
                 
                 let char: SurvivorCharacter = match FromPrimitive::from_u8(packet.ru8())
                 {
@@ -166,8 +170,12 @@ impl State for CharacterSelect
             },
 
             PacketType::CLIENT_REQUEST_EXECHARACTER => {
-                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
-                assert_or_disconnect!(self.exe == id, &mut peer.lock().unwrap());
+                {
+                    let peer =  &mut peer.lock().unwrap();
+                    assert_or_disconnect!(!peer.pending, peer);
+                    assert_or_disconnect!(!passtrough, peer);
+                    assert_or_disconnect!(self.exe == id, peer);
+                }
 
                 let char: ExeCharacter = match FromPrimitive::from_u8(packet.ru8() - 1)
                 {
@@ -197,9 +205,13 @@ impl State for CharacterSelect
 
                 info!("{} (ID {}) chooses [{:?}]", peer.lock().unwrap().nickname, id, char);
                 return self.check_remaining(server);
-            }
+            },
 
-            _ => {}
+            _ => {
+                let mut peer = peer.lock().unwrap();
+                debug!("Invalid packet from ID {}: {:?}", peer.id(), tp);
+                peer.disconnect("Invalid packet");
+            }
         }
 
         None

@@ -147,17 +147,14 @@ impl Server {
             player: None
         };
 
-        server.lock().unwrap().peers.write().unwrap().insert(_id, Arc::new(Mutex::new(peer)));
-
         // Listen for messages
-        let peer = server.lock().unwrap().peers.write().unwrap().get(&_id).unwrap().clone();
+        let peer = Arc::new(Mutex::new(peer));
         let peers = server.lock().unwrap().peers.clone();
         let server = server.clone();
         info!("{:?} connected. (ID {})", peer.lock().unwrap().addr(), _id);
-        Server::connected(&mut server.lock().unwrap(), state.clone(), peer);
+        Server::connected(&mut server.lock().unwrap(), state.clone(), peer.clone());
 
         thread::spawn(move || {
-
             let mut in_buffer = [0; 256];
 
             let mut pak_buffer: Vec<u8> = Vec::new();
@@ -172,8 +169,8 @@ impl Server {
                     Err(err) => {
                         debug!("{:?} disconnected (ID {}): {}", addr, _id, err);
                         
-                        let peer = peers.write().unwrap().remove(&_id).unwrap();
-                        Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer);
+                        peers.write().unwrap().remove(&_id).unwrap();
+                        Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer.clone());
                         break;
                     }
                 }
@@ -182,8 +179,8 @@ impl Server {
                 if read <= 0 {
                     debug!("{:?} disconnected (ID {})", addr, _id);
 
-                    let peer = peers.write().unwrap().remove(&_id).unwrap();
-                    Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer);
+                    peers.write().unwrap().remove(&_id).unwrap();
+                    Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer.clone());
                     break;
                 }
 
@@ -203,8 +200,7 @@ impl Server {
                             debug!("Packet ok");
 
                             let mut pak = Packet::from(&pak_buffer, pak_buffer.len());
-                            let peer = peers.read().unwrap().get(&_id).unwrap().clone();
-                            Server::got_tcp_packet(&mut server.lock().unwrap(), state.clone(), peer, &mut pak);
+                            Server::got_tcp_packet(&mut server.lock().unwrap(), state.clone(), peer.clone(), &mut pak);
                             pak_buffer.clear();
                         }
                     }

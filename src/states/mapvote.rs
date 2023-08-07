@@ -40,6 +40,7 @@ impl State for MapVote
         for i in 0..3 {
             self.votes.insert(i, 0);
         }
+        
 
         if self.map_list.len() >= 3 {
             for _i in 0..3 {
@@ -129,11 +130,16 @@ impl State for MapVote
             // Peer's identity
             PacketType::IDENTITY => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
-                self.handle_identity(server, &mut peer.lock().unwrap(), packet, false);
+                self.handle_identity(server, peer, packet, false);
             },
 
             PacketType::CLIENT_VOTE_REQUEST => {
-                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+                {
+                    let peer =  &mut peer.lock().unwrap();
+                    assert_or_disconnect!(!peer.pending, peer);
+                    assert_or_disconnect!(!passtrough, peer);
+                }
+
                 let map = packet.ru8();
 
                 // Sanity checks
@@ -151,9 +157,13 @@ impl State for MapVote
                 server.multicast_real(&mut packet);
 
                 self.check_votes(server);
-            }
+            },
 
-            _ => {}
+            _ => {
+                let mut peer = peer.lock().unwrap();
+                debug!("Invalid packet from ID {}: {:?}", peer.id(), tp);
+                peer.disconnect("Invalid packet");
+            }
         }
 
         None

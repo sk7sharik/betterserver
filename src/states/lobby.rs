@@ -1,7 +1,7 @@
 use std::sync::{Mutex, Arc};
 use log::{debug, info};
 use rand::{thread_rng, Rng};
-use crate::{state::State, server::{Server, Peer, real_peers}, packet::{Packet, PacketType, self}};
+use crate::{state::State, server::{Server, Peer, real_peers, assert_or_disconnect}, packet::{Packet, PacketType, self}};
 
 use super::mapvote::MapVote;
 
@@ -64,7 +64,7 @@ impl State for Lobby
                     }
                 
                     peer.timer += 1;
-                    if peer.timer >= 30 || (peer.pending && peer.timer >= 5) {
+                    if peer.timer >= 30 || (peer.pending && peer.timer >= 2) {
                         debug!("[Lobby] Disconnecting... {} (ID {})", peer.nickname, peer.id());
                         peer.disconnect("AFK or timeout");
                         continue;
@@ -73,7 +73,6 @@ impl State for Lobby
             
                 // Heartbeat
                 server.multicast_real(&mut Packet::new(PacketType::SERVER_HEARTBEAT));
-            
                 self.heartbeat_timer = 0;
             }
         }
@@ -100,7 +99,7 @@ impl State for Lobby
 
     fn got_tcp_packet(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>, packet: &mut Packet) -> Option<Box<dyn State>>
     {
-        let _passtrough = packet.ru8(); //TODO: get rid of
+        let passtrough = packet.ru8() != 0; //TODO: get rid of
         let tp = packet.rpk();
 
         debug!("Got packet {:?}", tp);
@@ -114,14 +113,21 @@ impl State for Lobby
         {
             // Peer's identity
             PacketType::IDENTITY => {
-                self.handle_identity(server, &mut peer.lock().unwrap(), packet, true);
-                self.accept_player(&mut peer.lock().unwrap());
-                self.share_player(server, &mut peer.lock().unwrap());
-                self.check_ready(server);
+                if self.handle_identity(server, peer.clone(), packet, true) {
+                    self.accept_player(&mut peer.lock().unwrap());
+                    self.share_player(server, &mut peer.lock().unwrap());
+                    self.check_ready(server);
+                }
             },
 
             // Peer requests player list
             PacketType::CLIENT_LOBBY_PLAYERS_REQUEST => {
+                {
+                    let peer =  &mut peer.lock().unwrap();
+                    assert_or_disconnect!(!peer.pending, peer);
+                    assert_or_disconnect!(!passtrough, peer);
+                }
+                
                 for plr in server.peers.read().unwrap().iter() {
                     let plr = plr.1.lock().unwrap();
 
@@ -149,6 +155,12 @@ impl State for Lobby
 
             // Peer's ready state changed
             PacketType::CLIENT_LOBBY_READY_STATE => {
+                {
+                    let peer =  &mut peer.lock().unwrap();
+                    assert_or_disconnect!(!peer.pending, peer);
+                    assert_or_disconnect!(!passtrough, peer);
+                }
+
                 let ready = packet.ru8() != 0;
                 
                 let mut packet = Packet::new(PacketType::SERVER_LOBBY_READY_STATE);
@@ -162,6 +174,12 @@ impl State for Lobby
 
             // Peer's chat message
             PacketType::CLIENT_CHAT_MESSAGE => {
+                {
+                    let peer =  &mut peer.lock().unwrap();
+                    assert_or_disconnect!(!peer.pending, peer);
+                    assert_or_disconnect!(!passtrough, peer);
+                }
+
                 // Remulitcast the message
                 server.multicast_real_except(packet, id);
 
@@ -172,6 +190,11 @@ impl State for Lobby
             },
 
             _ => {
+                {
+                    let peer =  &mut peer.lock().unwrap();
+                    assert_or_disconnect!(!peer.pending, peer);
+                }
+
                 debug!("Unrecognized packet {:?}", tp);
             }
         }

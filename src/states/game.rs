@@ -165,7 +165,7 @@ impl State for Game
         {
             PacketType::IDENTITY => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
-                self.handle_identity(server, &mut peer.lock().unwrap(), packet, false);
+                self.handle_identity(server, peer, packet, false);
             },
 
             PacketType::CLIENT_PLAYER_DEATH_STATE => {
