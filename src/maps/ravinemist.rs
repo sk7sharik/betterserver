@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use rand::{thread_rng, Rng};
+use rand::{thread_rng, Rng, seq::IteratorRandom};
 
 use crate::{map::Map, states::game::{Game, find_entities}, server::{Server, Peer}, entities::slug::{Slug, SlugState, SlugRing}, packet::{Packet, PacketType}};
 
@@ -26,7 +26,7 @@ pub(crate) struct RavineMist
 
 impl Map for RavineMist
 {
-    fn init(&mut self, server: &mut Server, game: &mut Game) 
+    fn init(&mut self, _server: &mut Server, _game: &mut Game) 
     {
         self.slug_timer = thread_rng().gen_range(2..17) * 60;
     }
@@ -36,16 +36,22 @@ impl Map for RavineMist
         self.slug_timer -= 1;
 
         if self.slug_timer <= 0 {
-            let pair = self.find_free();
-            
-            game.spawn(server, Box::new(Slug { 
-                x: self.slugs[pair].0,
-                y: self.slugs[pair].1,
-                pair: pair,
-                state: SlugState::NoneRight,
-                ring: SlugRing::None,
-                realX: 0
-            }));
+            match self.find_free()
+            {
+                Some(slug) => {
+                    game.spawn(server, Box::new(Slug { 
+                        x: slug.0,
+                        y: slug.1,
+                        state: SlugState::NoneRight,
+                        ring: SlugRing::None,
+                        real_x: 0
+                    }));
+
+                    slug.2 = true;
+                },
+
+                None => {}
+            }
 
             self.slug_timer = (15 * 60) + (thread_rng().gen_range(2..10) * 60);
         }
@@ -66,7 +72,7 @@ impl Map for RavineMist
                     }
 
                     let slug = entity.1.as_any().downcast_ref::<Slug>().unwrap();
-                    self.slugs[slug.pair].2 = false;
+                    self.slugs.iter_mut().filter(|x| x.0 == slug.x && x.1 == slug.y).next().unwrap().2 = false;
                     game.queue_destroy(entity.0);
                     
                     if proj {
@@ -118,17 +124,7 @@ impl RavineMist
         }
     }
 
-    fn find_free(&mut self) -> usize {
-        let mut ind = 0;
-        for point in self.slugs.iter_mut() {
-            if !point.2 {
-                point.2 = true;
-                return ind;
-            }
-
-            ind += 1;
-        }
-
-        0
+    fn find_free(&mut self) -> Option<&mut (i32, i32, bool)> {
+        return self.slugs.iter_mut().filter(|x| !x.2).choose(&mut thread_rng());
     }
 }

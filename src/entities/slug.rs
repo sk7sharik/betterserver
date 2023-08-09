@@ -1,4 +1,4 @@
-use log::info;
+use log::debug;
 use rand::{thread_rng, Rng};
 
 use crate::{entity::Entity, states::game::Game, server::Server, packet::{Packet, PacketType}};
@@ -28,15 +28,14 @@ pub(crate) struct Slug
     pub y: i32,
     pub state: SlugState,
     pub ring: SlugRing,
-    pub pair: usize,
-    pub realX: i32
+    pub real_x: i32
 }
 
 impl Entity for Slug
 {
     fn spawn(&mut self, _server: &mut Server, _game: &mut Game, id: &u16) -> Option<Packet> 
     {
-        info!("Slug at ({}, {})", self.x, self.y);
+        debug!("Slug at ({}, {})", self.x, self.y);
         let rng = thread_rng().gen_range(0..100);
 
         if rng < 50 {
@@ -60,7 +59,7 @@ impl Entity for Slug
         let mut packet = Packet::new(PacketType::SERVER_RMZSLIME_STATE);
         packet.wu8(0u8);
         packet.wu16(*id);
-        packet.wu16((self.x + self.realX) as u16);
+        packet.wu16((self.x + self.real_x) as u16);
         packet.wu16(self.y as u16);
         packet.wu8(self.state as u8);
 
@@ -74,7 +73,7 @@ impl Entity for Slug
         let mut packet = Packet::new(PacketType::SERVER_RMZSLIME_STATE);
         packet.wu8(1u8);
         packet.wu16(*id);
-        packet.wu16((self.x + self.realX) as u16);
+        packet.wu16((self.x + self.real_x) as u16);
         packet.wu16(self.y as u16);
         packet.wu8(self.state as u8);
 
@@ -108,17 +107,17 @@ impl Slug
     fn tick(&mut self) {
         match self.state {
             SlugState::NoneLeft | SlugState::RingLeft | SlugState::RedRingLeft => {
-                self.realX -= 1;
+                self.real_x -= 1;
 
-                if (self.realX) < -100 {
+                if (self.real_x) < -100 {
                     self.swap();
                 }
             },
 
             SlugState::NoneRight | SlugState::RingRight | SlugState::RedRingRight => {
-                self.realX += 1;
+                self.real_x += 1;
 
-                if (self.realX) > 100 {
+                if (self.real_x) > 100 {
                     self.swap();
                 }
             },

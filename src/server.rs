@@ -248,8 +248,7 @@ impl Server {
                 check_state!(next_state, server);
             }
             
-            while last_update.elapsed().as_nanos() < (15u128 * 1000000u128)
-            {
+            while last_update.elapsed().as_nanos() < (15u128 * 1000000u128) {
                 thread::sleep(Duration::from_nanos(100000u64));
             }
         }
