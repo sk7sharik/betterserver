@@ -18,6 +18,12 @@ mod states;
 
 fn init_logger()
 {
+    let mut level = LevelFilter::Info;
+
+    if CONFIG.debug {
+        level = LevelFilter::Debug;
+    }
+
     let console = ConsoleAppender::builder()
     .encoder(Box::new(PatternEncoder::new("[{h({l})} {T} {d(%Y-%m-%d %H:%M:%S)}] {m} {n}")))
     .build();
@@ -30,7 +36,7 @@ fn init_logger()
     let config = Config::builder()
     .appender(Appender::builder().build("console", Box::new(console)))
     .appender(Appender::builder().build("logfile", Box::new(logfile)))
-    .build(Root::builder().appender("console").appender("logfile").build(LevelFilter::Debug))
+    .build(Root::builder().appender("console").appender("logfile").build(level))
     .unwrap();
     
     log4rs::init_config(config).unwrap();
@@ -50,12 +56,11 @@ fn find_free_server(servers: &mut Vec<Arc<Mutex<Server>>>, port: &mut u16) -> Ar
             return servers.last().unwrap().clone();
         }
 
-        info!("Allocating new server ({}/{})!", servers.len() + 1, CONFIG.server.grow_limit);
-
+        info!("Allocating new sub-server... ({}/{})", servers.len() + 1, CONFIG.server.grow_limit);
         port.add_assign(1);
+
         let server = Server::start(*port, format!("server{}", servers.len()));
         servers.push(server.clone());
-
         return server;
     }
     else {
@@ -73,12 +78,12 @@ fn main()
     {
         Ok(res) => res,
         Err(err) => {
-            error!("Failed to bind socket: {}", err);
+            error!("Failed to bind listener: {}", err);
             return;
         }
     };
 
-    servers.push(Server::start(CONFIG.server.udp_port, "server0".to_string()));
+    info!("Listening for connections on {}/tcp", CONFIG.server.tcp_port);
     for stream in listner.incoming()
     {
         // If failed to open a stream, ignore

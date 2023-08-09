@@ -56,7 +56,7 @@ pub(crate) struct Game
 
     // Game state
     started: bool,
-    timer: u16,
+    pub timer: u16,
     end_timer: u16,
     
     // Entities
@@ -72,10 +72,10 @@ impl State for Game
         let mut packet = Packet::new(PacketType::SERVER_LOBBY_GAME_START);
         server.multicast_real(&mut packet);
 
-        self.timer = (self.map.lock().unwrap().timer_sec(&server) * 60.0) as u16;
-        self.ring_timer = (self.map.lock().unwrap().ring_time_sec(&server) * 60.0) as u16;
+        self.timer = (self.map.lock().unwrap().timer(&server)) as u16;
+        self.ring_timer = (self.map.lock().unwrap().ring_time(&server)) as u16;
         self.rings = vec![false; self.map.lock().unwrap().ring_count()];
-        self.big_ring_time = self.map.lock().unwrap().bring_activate_time_sec() * 60;
+        self.big_ring_time = self.map.lock().unwrap().bring_activate_time();
 
         info!("Waiting for players...");
         None
@@ -153,7 +153,6 @@ impl State for Game
     {
         let passtrough = packet.ru8() != 0; //TODO: get rid of
         let tp = packet.rpk();
-
         debug!("Got packet {:?}", tp);
 
         if !peer.lock().unwrap().pending {
@@ -165,7 +164,7 @@ impl State for Game
         {
             PacketType::IDENTITY => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
-                self.handle_identity(server, peer, packet, false);
+                self.handle_identity(server, peer.clone(), packet, false);
             },
 
             PacketType::CLIENT_PLAYER_DEATH_STATE => {
@@ -177,7 +176,7 @@ impl State for Game
                 let mut revival_times = 0;
                 {
                     let mut peer = peer.lock().unwrap();
-                    let mut player = peer.player.as_mut().unwrap();
+                    let player = peer.player.as_mut().unwrap();
                     
                     assert_or_disconnect!(player.revival_times < 2, &mut peer);
                     player.dead = packet.ru8() != 0;
@@ -515,13 +514,15 @@ impl State for Game
                 }
             },
 
-            _ => {
+            _ => {                
                 if passtrough {
                     server.multicast_real_except(packet, id);
                 }
             }
         }
-
+        
+        packet.rewind(0);
+        self.map.clone().lock().unwrap().got_tcp_packet(server, self, peer, packet);
         self.entity_check_destroy(server);
         None
     }
@@ -576,8 +577,7 @@ impl State for Game
             if self.recp.len() >= real_peers!(server).count() {
                 self.started = true;
 
-                let map_clone = self.map.clone();
-                map_clone.lock().unwrap().init(server, self);
+                self.map.clone().lock().unwrap().init(server, self);
 
                 let mut packet = Packet::new(PacketType::SERVER_GAME_PLAYERS_READY);
                 server.multicast_real(&mut packet);

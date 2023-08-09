@@ -1,4 +1,3 @@
-use log::debug;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
@@ -144,7 +143,6 @@ pub(crate) enum PacketType
     CLIENT_PLAYER_POTATER,
 }
 
-
 pub(crate) struct Packet
 {
     buffer: Vec<u8>,
@@ -179,6 +177,15 @@ impl Packet
         pack.buffer.insert(0, 0);
 
         pack
+    }
+
+    pub fn rewind(&mut self, pos: usize)
+    {
+        self.position = pos;
+    }
+
+    pub fn len(&self) -> usize {
+        self.buffer.len()
     }
 
     pub fn wpk(&mut self, val: PacketType)

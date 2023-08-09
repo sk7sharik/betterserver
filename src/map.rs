@@ -4,8 +4,8 @@ use crate::{server::{Server, real_peers, Peer}, packet::Packet, states::game::Ga
 
 pub(crate) trait Map: Send + Sync
 {
-    fn timer_sec(&self, server: &Server) -> f32 {
-        150.0 + 120.0 * self.player_time_multiplier(server)
+    fn timer(&self, server: &Server) -> f32 {
+        (180.0 + 100.0 * self.player_time_multiplier(server)) * 60.0
     }
 
     fn player_time_multiplier(&self, server: &Server) -> f32 {
@@ -16,21 +16,21 @@ pub(crate) trait Map: Send + Sync
         1
     }
 
-    fn ring_time_sec(&self, server: &Server) -> f32 {
-        5.0 - self.player_time_multiplier(server) * 0.25
+    fn ring_time(&self, server: &Server) -> f32 {
+        300.0 - (60.0 * self.player_time_multiplier(server) * 0.25)
     }
 
     fn spawn_red_rings(&self) -> bool {
         true
     }
 
-    fn bring_activate_time_sec(&self) -> u16 {
-       60 - 10
+    fn bring_activate_time(&self) -> u16 {
+       (60 - 10) * 60
     }
  
-    fn init(&mut self, server: &mut Server, game: &mut Game) {}
-    fn tick(&mut self, server: &mut Server, game: &mut Game) {}
-    fn got_tcp_packet(&mut self, server: &mut Server, game: &mut Game, peer: Arc<Mutex<Peer>>, packet: &mut Packet) {}
+    fn init(&mut self, _server: &mut Server, _game: &mut Game) {}
+    fn tick(&mut self, _server: &mut Server, _game: &mut Game) {}
+    fn got_tcp_packet(&mut self, _server: &mut Server, _game: &mut Game, _peer: Arc<Mutex<Peer>>, _packet: &mut Packet) {}
 
     fn name(&self) -> &str;
     fn index(&self) -> usize;

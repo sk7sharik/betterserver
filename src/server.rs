@@ -54,8 +54,6 @@ macro_rules! assert_or_disconnect {
 
 pub(crate) use real_peers;
 pub(crate) use assert_or_disconnect;
-
-
 pub(crate) struct Server
 {
     pub udp_port: u16,
@@ -97,10 +95,10 @@ impl Server {
         let state = server.lock().unwrap().state.clone();
 
         let _ = thread::Builder::new().name(name.clone()).spawn(move || {
+            info!("Listening at {}/udp", udp_port);
             Server::udp_worker(server_clone, state, listener_clone);
         });
 
-        info!("Listening at (UDP {})", udp_port);
         server
     }
 
@@ -172,7 +170,7 @@ impl Server {
                 {
                     Ok(sz) => read = sz,
                     Err(err) => {
-                        debug!("{:?} disconnected (ID {}): {}", addr, _id, err);
+                        info!("{:?} disconnected (ID {}): {}", addr, _id, err);
                         
                         peers.write().unwrap().remove(&_id);
                         Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer.clone());
@@ -182,7 +180,7 @@ impl Server {
 
                 // Check connection close
                 if read <= 0 {
-                    debug!("{:?} disconnected (ID {})", addr, _id);
+                    info!("{:?} disconnected (ID {})", addr, _id);
 
                     peers.write().unwrap().remove(&_id);
                     Server::disconnected(&mut server.lock().unwrap(), state.clone(), peer.clone());
@@ -243,12 +241,17 @@ impl Server {
     fn tick_worker(state: Arc<Mutex<Box<dyn State>>>, server: Arc<Mutex<Server>>) 
     {
         loop {
-            {
+            let last_update = Instant::now();
+            { 
                 let server = &mut server.lock().unwrap();
                 let next_state = state.lock().unwrap().tick(server);
                 check_state!(next_state, server);
             }
-            thread::sleep(Duration::from_millis(15));
+            
+            while last_update.elapsed().as_nanos() < (15u128 * 1000000u128)
+            {
+                thread::sleep(Duration::from_nanos(100000u64));
+            }
         }
     }
 

@@ -7,3 +7,6 @@ pub mod eggtrack;
 pub mod creamring;
 pub mod blackring;
 pub mod exclone;
+
+// Maps
+pub mod slug;

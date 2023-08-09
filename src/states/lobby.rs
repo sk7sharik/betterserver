@@ -309,7 +309,6 @@ impl Lobby
             self.countdown = true;
             self.countdown_timer = 60 * 5;
 
-            println!("done");
             let mut packet = Packet::new(PacketType::SERVER_LOBBY_COUNTDOWN);
             packet.wu8(self.countdown as u8);
             packet.wu8((self.countdown_timer / 60) as u8);
@@ -318,7 +317,6 @@ impl Lobby
             if self.countdown {
                 self.countdown = false;
 
-                println!("done");
                 let mut packet = Packet::new(PacketType::SERVER_LOBBY_COUNTDOWN);
                 packet.wu8(self.countdown as u8);
                 packet.wu8((self.countdown_timer / 60) as u8);
