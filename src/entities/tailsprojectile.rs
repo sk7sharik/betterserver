@@ -1,6 +1,3 @@
-use log::warn;
-use rand::{thread_rng, Rng};
-
 use crate::{entity::Entity, states::game::Game, server::Server, packet::{Packet, PacketType}};
 
 pub(crate) struct TailsProjectile

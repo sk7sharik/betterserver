@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream, SocketAddr, UdpSocket};
+use std::net::{TcpStream, SocketAddr, UdpSocket};
 use std::num::Wrapping;
 use std::ops::AddAssign;
 use std::sync::{Arc, Mutex, RwLock};
@@ -47,7 +47,7 @@ macro_rules! assert_or_disconnect {
     ($expr: expr, $peer: expr) => {
         if (!$expr) {
             $peer.disconnect(format!("assert_or_disconnect failed: \'{}\'! ", stringify!($expr)).as_str());
-            return None;
+            return Ok(());
         }
     };
 }
@@ -349,14 +349,20 @@ impl Server {
 
     fn got_tcp_packet(server: &mut Server, state: Arc<Mutex<Box<dyn State>>>, peer: Arc<Mutex<Peer>>, packet: &mut Packet) 
     {  
-        let next_state = state.lock().unwrap().got_tcp_packet(server, peer, packet);
-        check_state!(next_state, server);
+        let result = state.lock().unwrap().got_tcp_packet(server, peer.clone(), packet);
+
+        if !result.is_ok() {
+            peer.lock().unwrap().disconnect(format!("got_tcp_packet failed: {}", result.err().unwrap()).as_str());
+        }
     }
 
     fn got_udp_packet(server: &mut Server, state: Arc<Mutex<Box<dyn State>>>, addr: &SocketAddr, packet: &mut Packet)
     {
-        let next_state = state.lock().unwrap().got_udp_packet(server, addr, packet);
-        check_state!(next_state, server);
+        let result = state.lock().unwrap().got_udp_packet(server, addr, packet);
+        
+        if !result.is_ok() {
+            warn!("got_udp_packet failed: {}", result.err().unwrap());
+        }
     }
 }
 

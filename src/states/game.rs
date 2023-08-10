@@ -149,10 +149,10 @@ impl State for Game
         None
     }
 
-    fn got_tcp_packet(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>, packet: &mut Packet) -> Option<Box<dyn State>> 
+    fn got_tcp_packet(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>, packet: &mut Packet) -> Result<(), &'static str>
     {
-        let passtrough = packet.ru8() != 0; //TODO: get rid of
-        let tp = packet.rpk();
+        let passtrough = packet.ru8()? != 0; //TODO: get rid of
+        let tp = packet.rpk()?;
         debug!("Got packet {:?}", tp);
 
         if !peer.lock().unwrap().pending {
@@ -179,8 +179,8 @@ impl State for Game
                     let player = peer.player.as_mut().unwrap();
                     
                     assert_or_disconnect!(player.revival_times < 2, &mut peer);
-                    player.dead = packet.ru8() != 0;
-                    player.revival_times = packet.ru8();
+                    player.dead = packet.ru8()? != 0;
+                    player.revival_times = packet.ru8()?;
                     player.revival = PlayerRevival { progress: 0.0, initiators: Vec::new() };
 
                     dead = player.dead;
@@ -249,8 +249,8 @@ impl State for Game
             },
 
             PacketType::CLIENT_REVIVAL_PROGRESS => {
-                let pid = packet.ru16();
-                let rings = packet.ru8();
+                let pid = packet.ru16()?;
+                let rings = packet.ru8()?;
                 let mut sub_vec: Vec<u16> = Vec::new();
 
                 for peer in real_peers!(server) {
@@ -317,17 +317,17 @@ impl State for Game
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
                 if find_entities!(self.entities.lock().unwrap(), "tproj").count() > 0 {
                     peer.lock().unwrap().disconnect("Projectile abusing.");
-                    return None;
+                    return Ok(());
                 }
 
                 self.spawn(server, Box::new(TailsProjectile {
                     owner: id,
-                    x: packet.ru16() as i32,
-                    y: packet.ru16() as i32,
-                    dir: packet.ri8(),
-                    dmg: packet.ru8(),
-                    exe: packet.ru8() != 0,
-                    charge: packet.ru8(),
+                    x: packet.ru16()? as i32,
+                    y: packet.ru16()? as i32,
+                    dir: packet.ri8()?,
+                    dmg: packet.ru8()?,
+                    exe: packet.ru8()? != 0,
+                    charge: packet.ru8()?,
                     timer: 5 * 60
                 }));
             },
@@ -342,15 +342,15 @@ impl State for Game
             PacketType::CLIENT_ETRACKER => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
                 self.spawn(server, Box::new(EggmanTracker {
-                    x: packet.ru16(),
-                    y: packet.ru16(),
+                    x: packet.ru16()?,
+                    y: packet.ru16()?,
                     activated_by: 0
                 }));
             },
 
             PacketType::CLIENT_ETRACKER_ACTIVATED => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
-                let eid = packet.ru16();
+                let eid = packet.ru16()?;
 
                 for entity in find_entities_mut!(self.entities.clone().lock().unwrap(), "eggtrack") {
                     if *entity.0 != eid {
@@ -367,9 +367,9 @@ impl State for Game
             PacketType::CLIENT_CREAM_SPAWN_RINGS => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
 
-                let x = packet.ru16();
-                let y = packet.ru16();
-                let red = packet.ru8() != 0;
+                let x = packet.ru16()?;
+                let y = packet.ru16()?;
+                let red = packet.ru8()? != 0;
 
                 // Sanity checks
                 {
@@ -409,8 +409,8 @@ impl State for Game
             PacketType::CLIENT_RING_COLLECTED => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
 
-                let rid = packet.ru8() as usize;
-                let eid = packet.ru16();
+                let rid = packet.ru8()? as usize;
+                let eid = packet.ru16()?;
                 
                 for entity in find_entities!(self.entities.clone().lock().unwrap(), "ring") {
                     let ring = entity.1.as_any().downcast_ref::<Ring>().unwrap();
@@ -448,8 +448,8 @@ impl State for Game
 
             PacketType::CLIENT_ERECTOR_BRING_SPAWN => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
-                let x = packet.ru16();
-                let y = packet.ru16();
+                let x = packet.ru16()?;
+                let y = packet.ru16()?;
                 let rid = self.spawn_quiet(server, Box::new(BlackRing {}));
 
                 let mut packet = Packet::new(PacketType::SERVER_ERECTOR_BRING_SPAWN);
@@ -462,7 +462,7 @@ impl State for Game
             PacketType::CLIENT_BRING_COLLECTED => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
 
-                let eid = packet.ru16();
+                let eid = packet.ru16()?;
                 for entity in find_entities!(self.entities.clone().lock().unwrap(), "blackring") {                    
                     if *entity.0 != eid {
                         continue;
@@ -479,8 +479,8 @@ impl State for Game
             PacketType::CLIENT_ERECTOR_BALLS => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
 
-                let x = packet.rf32();
-                let y = packet.rf32();
+                let x = packet.rf32()?;
+                let y = packet.rf32()?;
 
                 let mut packet = Packet::new(PacketType::CLIENT_ERECTOR_BALLS);
                 packet.wf32(x);
@@ -494,15 +494,15 @@ impl State for Game
 
                 self.spawn(server, Box::new(ExellerClone {
                     owner_id: id,
-                    x: packet.ru16(),
-                    y: packet.ru16(),
-                    dir: packet.ri8()
+                    x: packet.ru16()?,
+                    y: packet.ru16()?,
+                    dir: packet.ri8()?
                 }));
             },
 
             PacketType::CLIENT_EXELLER_TELEPORT_CLONE => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
-                let cid = packet.ru16();
+                let cid = packet.ru16()?;
                 
                 for entity in find_entities!(self.entities.clone().lock().unwrap(), "exclone") {
                     if *entity.0 != cid {
@@ -522,15 +522,15 @@ impl State for Game
         }
         
         packet.rewind(0);
-        self.map.clone().lock().unwrap().got_tcp_packet(server, self, peer, packet);
+        self.map.clone().lock().unwrap().got_tcp_packet(server, self, peer, packet)?;
         self.entity_check_destroy(server);
-        None
+        Ok(())
     }
 
-    fn got_udp_packet(&mut self, server: &mut Server, addr: &SocketAddr, packet: &mut Packet) -> Option<Box<dyn State>> 
+    fn got_udp_packet(&mut self, server: &mut Server, addr: &SocketAddr, packet: &mut Packet) -> Result<(), &'static str>
     {
-        let pid = packet.ru16();
-        let tp = packet.rpk();
+        let pid = packet.ru16()?;
+        let tp = packet.rpk()?;
 
         match tp {
             PacketType::CLIENT_PLAYER_DATA => {
@@ -541,8 +541,8 @@ impl State for Game
             },
 
             PacketType::CLIENT_PING => {
-                let ping = packet.ru64();
-                let calc = packet.ru16();
+                let ping = packet.ru64()?;
+                let calc = packet.ru16()?;
 
                 let mut packet = Packet::new(PacketType::SERVER_PONG);
                 packet.wu64(ping);
@@ -567,7 +567,7 @@ impl State for Game
 
                     None => {
                         warn!("Suspicious UDP: peer with ID {} doesn't exist", pid);
-                        return None;
+                        return Ok(());
                     }
                 };
 
@@ -585,11 +585,11 @@ impl State for Game
                 info!("Game started! (Timer is {} frames)", self.timer);
             }
 
-            return None;
+            return Ok(());
         }
 
         self.entity_check_destroy(server);
-        None
+        Ok(())
     }
 
     fn name(&self) -> &str { "Game" }
@@ -695,8 +695,8 @@ impl Game
             let peer_count = real_peers!(server).filter(|x| !x.lock().unwrap().player.as_ref().unwrap().exe).count();
             let demon_count = real_peers!(server).filter(|x| x.lock().unwrap().player.as_ref().unwrap().revival_times >= 2).count();
 
-            let mut id = 0;
-            let mut death_timer = 0;
+            let id;
+            let mut death_timer;
             {
                 let mut peer = peer.lock().unwrap();
                 id = peer.id();

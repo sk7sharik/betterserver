@@ -11,26 +11,26 @@ pub(crate) trait State: Send + Sync
 
     fn connect(&mut self, _server: &mut Server, _peer: Arc<Mutex<Peer>>) -> Option<Box<dyn State>>;
     fn disconnect(&mut self, _server: &mut Server, _peer: Arc<Mutex<Peer>>) -> Option<Box<dyn State>>;
-    fn got_tcp_packet(&mut self, _server: &mut Server, _peer: Arc<Mutex<Peer>>, _packet: &mut Packet) -> Option<Box<dyn State>>;
-    fn got_udp_packet(&mut self, _server: &mut Server, _addr: &SocketAddr, _packet: &mut Packet) -> Option<Box<dyn State>> { None }
+    fn got_tcp_packet(&mut self, _server: &mut Server, _peer: Arc<Mutex<Peer>>, _packet: &mut Packet) -> Result<(), &'static str>;
+    fn got_udp_packet(&mut self, _server: &mut Server, _addr: &SocketAddr, _packet: &mut Packet) -> Result<(), &'static str> { Ok(()) }
 
-    fn handle_identity(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>, packet: &mut Packet, accept: bool) -> bool
+    fn handle_identity(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>, packet: &mut Packet, accept: bool) -> Result<bool, &'static str>
     {
         {
             let mut peer = peer.lock().unwrap();
 
             if !peer.pending {
                 peer.disconnect("Second identity attempt.");
-                return false;
+                return Ok(false);
             }
 
-            let build_ver = packet.ru16();
+            let build_ver = packet.ru16()?;
             if build_ver != BUILD_VER {
                 peer.disconnect("Version mismatch.");
-                return false;
+                return Ok(false);
             }
 
-            let nickname = packet.rstr();
+            let nickname = packet.rstr()?;
             if nickname.len() > 15 {
                 peer.nickname = nickname.chars().take(15).collect();
             }
@@ -38,10 +38,10 @@ pub(crate) trait State: Send + Sync
                 peer.nickname = nickname;
             }
             
-            peer.lobby_icon = packet.ru8();
-            peer.pet = packet.ri8();
-            let os_type = packet.ru8();
-            peer.udid = packet.rstr();
+            peer.lobby_icon = packet.ru8()?;
+            peer.pet = packet.ri8()?;
+            let os_type = packet.ru8()?;
+            peer.udid = packet.rstr()?;
             debug!("Identity of \"{}\" (ID {}):", peer.nickname, peer.id());
             debug!("OS: {} UDID: {}", os_type, peer.udid);
             
@@ -59,7 +59,7 @@ pub(crate) trait State: Send + Sync
         let id = peer.lock().unwrap().id();
         server.peers.write().unwrap().insert(id, peer);
         debug!("Added ID {} to peer list!", id);
-        true
+        Ok(true)
     }
 
     fn name(&self) -> &str { "default" }

@@ -297,30 +297,54 @@ impl Packet
 
     }
 
-    pub fn rpk(&mut self) -> PacketType
+    pub fn rpk(&mut self) -> Result<PacketType, &'static str>
     {
-        let val = self.buffer[self.position];
-        self.position += 1;
+        match self.buffer.get(self.position) {
+            Some(val) => {
+                self.position += 1;
+                Ok(FromPrimitive::from_u8(*val).expect("Failed to convert to PacketType"))
+            },
 
-        FromPrimitive::from_u8(val).expect("Failed to convert to PacketType")
+            None => {
+                Err("Reading outside the bounds! (type: PacketType)")
+            }
+        }        
     }
 
-    pub fn ru8(&mut self) -> u8
+    pub fn ru8(&mut self) -> Result<u8, &'static str>
     {
-        let val = self.buffer[self.position];
-        self.position += 1;
-        val
+        match self.buffer.get(self.position) {
+            Some(val) => {
+                self.position += 1;
+                Ok(*val)
+            },
+
+            None => {
+                Err("Reading outside the bounds! (type: u8)")
+            }
+        }       
     }
 
-    pub fn ri8(&mut self) -> i8
+    pub fn ri8(&mut self) -> Result<i8, &'static str>
     {
-        let val = self.buffer[self.position] as i8;
-        self.position += 1;
-        val
+        match self.buffer.get(self.position) {
+            Some(val) => {
+                self.position += 1;
+                Ok(*val as i8)
+            },
+
+            None => {
+                Err("Reading outside the bounds! (type: i8)")
+            }
+        }
     }
 
-    pub fn ru16(&mut self) -> u16
+    pub fn ru16(&mut self) -> Result<u16, &'static str>
     {
+        if self.position + 2 >= self.buffer.len() {
+            return Err("Reading outside the bounds! (type: u16)");
+        }
+        
         let input: [u8; 2] = match self.buffer[self.position..self.position+2].try_into()
         {
             Ok(res) => res,
@@ -330,11 +354,15 @@ impl Packet
         };
 
         self.position += 2;
-        u16::from_le_bytes(input)
+        Ok(u16::from_le_bytes(input))
     }
 
-    pub fn ri16(&mut self) -> i16
+    pub fn ri16(&mut self) -> Result<i16, &'static str>
     {
+        if self.position + 2 >= self.buffer.len() {
+            return Err("Reading outside the bounds! (type: i16)");
+        }
+        
         let input: [u8; 2] = match self.buffer[self.position..self.position+2].try_into()
         {
             Ok(res) => res,
@@ -344,11 +372,15 @@ impl Packet
         };
 
         self.position += 2;
-        i16::from_le_bytes(input)
+        Ok(i16::from_le_bytes(input))
     }
 
-    pub fn ru32(&mut self) -> u32
+    pub fn ru32(&mut self) -> Result<u32, &'static str>
     {
+        if self.position + 4 >= self.buffer.len() {
+            return Err("Reading outside the bounds! (type: u32)");
+        }
+        
         let input: [u8; 4] = match self.buffer[self.position..self.position+4].try_into()
         {
             Ok(res) => res,
@@ -358,11 +390,15 @@ impl Packet
         };
 
         self.position += 4;
-        u32::from_le_bytes(input)
+        Ok(u32::from_le_bytes(input))
     }
 
-    pub fn ri32(&mut self) -> i32
+    pub fn ri32(&mut self) -> Result<i32, &'static str>
     {
+        if self.position + 4 >= self.buffer.len() {
+            return Err("Reading outside the bounds! (type: i32)");
+        }
+        
         let input: [u8; 4] = match self.buffer[self.position..self.position+4].try_into()
         {
             Ok(res) => res,
@@ -372,11 +408,15 @@ impl Packet
         };
 
         self.position += 4;
-        i32::from_le_bytes(input)
+        Ok(i32::from_le_bytes(input))
     }
 
-    pub fn ru64(&mut self) -> u64
+    pub fn ru64(&mut self) -> Result<u64, &'static str>
     {
+        if self.position + 8 >= self.buffer.len() {
+            return Err("Reading outside the bounds! (type: u64)");
+        }
+        
         let input: [u8; 8] = match self.buffer[self.position..self.position+8].try_into()
         {
             Ok(res) => res,
@@ -386,11 +426,15 @@ impl Packet
         };
 
         self.position += 8;
-        u64::from_le_bytes(input)
+        Ok(u64::from_le_bytes(input))
     }
 
-    pub fn ri64(&mut self) -> i64
+    pub fn ri64(&mut self) -> Result<i64, &'static str>
     {
+        if self.position + 8 >= self.buffer.len() {
+            return Err("Reading outside the bounds! (type: i64)");
+        }
+        
         let input: [u8; 8] = match self.buffer[self.position..self.position+8].try_into()
         {
             Ok(res) => res,
@@ -400,11 +444,15 @@ impl Packet
         };
 
         self.position += 8;
-        i64::from_le_bytes(input)
+        Ok(i64::from_le_bytes(input))
     }
 
-    pub fn rf32(&mut self) -> f32
+    pub fn rf32(&mut self) -> Result<f32, &'static str>
     {
+        if self.position + 4 >= self.buffer.len() {
+            return Err("Reading outside the bounds! (type: f32)");
+        }
+        
         let input: [u8; 4] = match self.buffer[self.position..self.position+4].try_into()
         {
             Ok(res) => res,
@@ -414,11 +462,15 @@ impl Packet
         };
 
         self.position += 4;
-        f32::from_le_bytes(input)
+        Ok(f32::from_le_bytes(input))
     }
 
-    pub fn rf64(&mut self) -> f64
+    pub fn rf64(&mut self) -> Result<f64, &'static str>
     {
+        if self.position + 8 >= self.buffer.len() {
+            return Err("Reading outside the bounds! (type: f64)");
+        }
+        
         let input: [u8; 8] = match self.buffer[self.position..self.position+8].try_into()
         {
             Ok(res) => res,
@@ -428,10 +480,10 @@ impl Packet
         };
 
         self.position += 8;
-        f64::from_le_bytes(input)
+        Ok(f64::from_le_bytes(input))
     }
 
-    pub fn rstr(&mut self) -> String
+    pub fn rstr(&mut self) -> Result<String, &'static str>
     {
         let mut str = String::new();
         let mut ch = self.buffer[self.position] as char;
@@ -439,13 +491,17 @@ impl Packet
 
         while ch != '\0'
         {
+            if self.position >= self.buffer.len() {
+                return Err("Reading outside the bounds! (type: String)");
+            }
+
             str.push(ch);
 
             ch = self.buffer[self.position] as char;
             self.position += 1;
         }
 
-        str
+        Ok(str)
     }
 
     pub fn raw(&self) -> &[u8] {

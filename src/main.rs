@@ -1,4 +1,4 @@
-use std::{net::TcpListener, sync::{Mutex, Arc}, ops::AddAssign, fmt::format};
+use std::{net::TcpListener, sync::{Mutex, Arc}, ops::AddAssign};
 
 use chrono::Utc;
 use config::CONFIG;

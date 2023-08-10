@@ -30,7 +30,7 @@ pub(crate) trait Map: Send + Sync
  
     fn init(&mut self, _server: &mut Server, _game: &mut Game) {}
     fn tick(&mut self, _server: &mut Server, _game: &mut Game) {}
-    fn got_tcp_packet(&mut self, _server: &mut Server, _game: &mut Game, _peer: Arc<Mutex<Peer>>, _packet: &mut Packet) {}
+    fn got_tcp_packet(&mut self, _server: &mut Server, _game: &mut Game, _peer: Arc<Mutex<Peer>>, _packet: &mut Packet) -> Result<(), &'static str> { Ok(()) }
 
     fn name(&self) -> &str;
     fn index(&self) -> usize;

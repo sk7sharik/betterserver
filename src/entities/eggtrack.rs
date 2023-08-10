@@ -1,8 +1,3 @@
-use std::num::Wrapping;
-
-use log::warn;
-use rand::{thread_rng, Rng};
-
 use crate::{entity::Entity, states::game::Game, server::Server, packet::{Packet, PacketType}};
 
 pub(crate) struct EggmanTracker
@@ -26,7 +21,7 @@ impl Entity for EggmanTracker
         Some(packet)
     }
 
-    fn tick(&mut self, _server: &mut Server, game: &mut Game, id: &u16) -> Option<Packet> 
+    fn tick(&mut self, _server: &mut Server, _game: &mut Game, _id: &u16) -> Option<Packet> 
     {
         None
     }

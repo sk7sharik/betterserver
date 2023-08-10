@@ -97,10 +97,10 @@ impl State for Lobby
         None
     }
 
-    fn got_tcp_packet(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>, packet: &mut Packet) -> Option<Box<dyn State>>
+    fn got_tcp_packet(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>, packet: &mut Packet) -> Result<(), &'static str>
     {
-        let passtrough = packet.ru8() != 0; //TODO: get rid of
-        let tp = packet.rpk();
+        let passtrough = packet.ru8()? != 0; //TODO: get rid of
+        let tp = packet.rpk()?;
 
         debug!("Got packet {:?}", tp);
 
@@ -113,7 +113,7 @@ impl State for Lobby
         {
             // Peer's identity
             PacketType::IDENTITY => {
-                if self.handle_identity(server, peer.clone(), packet, true) {
+                if self.handle_identity(server, peer.clone(), packet, true)? {
                     self.accept_player(&mut peer.lock().unwrap());
                     self.share_player(server, &mut peer.lock().unwrap());
                     self.check_ready(server);
@@ -161,7 +161,7 @@ impl State for Lobby
                     assert_or_disconnect!(!passtrough, peer);
                 }
 
-                let ready = packet.ru8() != 0;
+                let ready = packet.ru8()? != 0;
                 
                 let mut packet = Packet::new(PacketType::SERVER_LOBBY_READY_STATE);
                 packet.wu16(id);
@@ -182,8 +182,8 @@ impl State for Lobby
                 // Remulitcast the message
                 server.multicast_real_except(packet, id);
 
-                let _id = packet.ru16(); //TODO: get rid of
-                let msg = packet.rstr();
+                let _id = packet.ru16()?; //TODO: get rid of
+                let msg = packet.rstr()?;
 
                 info!("[{}]: {}", peer.lock().unwrap().nickname, msg);
             },
@@ -198,7 +198,7 @@ impl State for Lobby
             }
         }
 
-        None
+        Ok(())
     }
 
     fn connect(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>) -> Option<Box<dyn State>>

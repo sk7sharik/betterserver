@@ -57,14 +57,14 @@ impl Map for RavineMist
         }
     }
 
-    fn got_tcp_packet(&mut self, _server: &mut Server, game: &mut Game, peer: Arc<Mutex<Peer>>, packet: &mut Packet) {
-        let _passtrough = packet.ru8() != 0; //TODO: get rid of
-        let tp = packet.rpk();
+    fn got_tcp_packet(&mut self, _server: &mut Server, game: &mut Game, peer: Arc<Mutex<Peer>>, packet: &mut Packet) -> Result<(), &'static str> {
+        let _passtrough = packet.ru8()? != 0; //TODO: get rid of
+        let tp = packet.rpk()?;
 
         match tp {
             PacketType::CLIENT_RMZSLIME_HIT => {
-                let eid = packet.ru16();
-                let proj = packet.ru8() != 0;
+                let eid = packet.ru16()?;
+                let proj = packet.ru8()? != 0;
 
                 for entity in find_entities!(game.entities.clone().lock().unwrap(), "slug") {                    
                     if *entity.0 != eid {
@@ -100,6 +100,8 @@ impl Map for RavineMist
 
             _ => {}
         }
+
+        Ok(())
     }
 
     fn name(&self) -> &str {

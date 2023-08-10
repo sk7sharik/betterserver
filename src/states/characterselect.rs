@@ -1,14 +1,10 @@
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use log::{info, debug};
 use num_traits::FromPrimitive;
-use rand::seq::IteratorRandom;
 use rand::{thread_rng, Rng};
 
 use crate::map::Map;
-use crate::maps::hideandseek2::HideAndSeek2;
-use crate::maps::ravinemist::RavineMist;
 use crate::packet::{Packet, PacketType};
 use crate::state::State;
 use crate::server::{Server, Peer, real_peers, assert_or_disconnect, Player, SurvivorCharacter, ExeCharacter};
@@ -21,7 +17,8 @@ pub(crate) struct CharacterSelect
     heartbeat_timer: u8,
 
     map: Arc<Mutex<dyn Map>>,
-    exe: u16
+    exe: u16,
+    goto_game: bool
 }
 
 impl State for CharacterSelect
@@ -50,6 +47,10 @@ impl State for CharacterSelect
 
     fn tick(&mut self, server: &mut Server) -> Option<Box<dyn State>> 
     {
+        if self.goto_game {
+            return Some(Box::new(Game::new(self.map.clone())));
+        }
+
         if self.heartbeat_timer >= 60 {
             server.multicast(&mut Packet::new(PacketType::SERVER_HEARTBEAT));
 
@@ -83,7 +84,7 @@ impl State for CharacterSelect
         None
     }
 
-    fn connect(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>) -> Option<Box<dyn State>> 
+    fn connect(&mut self, _server: &mut Server, _peer: Arc<Mutex<Peer>>) -> Option<Box<dyn State>> 
     {
         None
     }
@@ -108,13 +109,14 @@ impl State for CharacterSelect
             return Some(Box::new(Lobby::new()));
         }
 
-        self.check_remaining(server)
+        self.check_remaining(server);
+        None
     }
 
-    fn got_tcp_packet(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>, packet: &mut Packet) -> Option<Box<dyn State>> 
+    fn got_tcp_packet(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>, packet: &mut Packet) -> Result<(), &'static str> 
     {
-        let passtrough = packet.ru8() != 0;
-        let tp = packet.rpk();
+        let passtrough = packet.ru8()? != 0;
+        let tp = packet.rpk()?;
         
         debug!("Got packet {:?}", tp);
 
@@ -135,18 +137,18 @@ impl State for CharacterSelect
                     assert_or_disconnect!(self.exe != id, peer);
                 }
                 
-                let char: SurvivorCharacter = match FromPrimitive::from_u8(packet.ru8())
+                let char: SurvivorCharacter = match FromPrimitive::from_u8(packet.ru8()?)
                 {
                     Some(res) => res,
                     None => {
                         peer.lock().unwrap().disconnect("Invalid survivor character requested!");      
-                        return None;
+                        return Ok(());
                     }
                 };
 
                 // Ignore if he already have a character
                 if peer.lock().unwrap().player.as_ref().unwrap().ch1 != SurvivorCharacter::None {
-                    return None;
+                    return Ok(());
                 }
 
                 // Set player's character if everything is OK
@@ -166,7 +168,7 @@ impl State for CharacterSelect
                 peer.lock().unwrap().send(&mut packet);
 
                 info!("{} (ID {}) chooses [{:?}]", peer.lock().unwrap().nickname, id, char);
-                return self.check_remaining(server);
+                self.check_remaining(server);
             },
 
             PacketType::CLIENT_REQUEST_EXECHARACTER => {
@@ -177,18 +179,18 @@ impl State for CharacterSelect
                     assert_or_disconnect!(self.exe == id, peer);
                 }
 
-                let char: ExeCharacter = match FromPrimitive::from_u8(packet.ru8() - 1)
+                let char: ExeCharacter = match FromPrimitive::from_u8(packet.ru8()? - 1)
                 {
                     Some(res) => res,
                     None => {
                         peer.lock().unwrap().disconnect("Invalid exe character requested!");      
-                        return None;
+                        return Ok(());
                     }
                 };
 
                 // Ignore if he already have a character
                 if peer.lock().unwrap().player.as_ref().unwrap().ch2 != ExeCharacter::None {
-                    return None;
+                    return Ok(());
                 }
 
                 // Set player's character
@@ -204,7 +206,7 @@ impl State for CharacterSelect
                 peer.lock().unwrap().send(&mut packet);
 
                 info!("{} (ID {}) chooses [{:?}]", peer.lock().unwrap().nickname, id, char);
-                return self.check_remaining(server);
+                self.check_remaining(server);
             },
 
             _ => {
@@ -214,7 +216,7 @@ impl State for CharacterSelect
             }
         }
 
-        None
+        Ok(())
     }
 
     fn name(&self) -> &str {
@@ -226,7 +228,7 @@ impl CharacterSelect
 {
     pub fn new(map: Arc<Mutex<dyn Map>>) -> CharacterSelect
     {
-        CharacterSelect { exe: 0, heartbeat_timer: 0, map }
+        CharacterSelect { exe: 0, heartbeat_timer: 0, map, goto_game: false }
     }
 
     fn choose_exe(&mut self, server: &mut Server) -> u16 
@@ -242,7 +244,7 @@ impl CharacterSelect
         }
     }
 
-    fn check_remaining(&mut self, server: &mut Server) -> Option<Box<dyn State>> 
+    fn check_remaining(&mut self, server: &mut Server)
     {
         if !real_peers!(server).any(|x| {
             let peer = x.lock().unwrap();
@@ -255,9 +257,7 @@ impl CharacterSelect
                 return player.ch1 == SurvivorCharacter::None;
             }
          }) {
-            return Some(Box::new(Game::new(self.map.clone())));
+            self.goto_game = true;
         }
-
-        None
     }
 }

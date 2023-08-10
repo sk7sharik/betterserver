@@ -1,10 +1,9 @@
-use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::ops::AddAssign;
 use std::sync::{Mutex, Arc};
 
 use log::{debug, info};
-use rand::seq::{IteratorRandom, SliceRandom};
+use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
 
 use crate::map::Map;
@@ -113,10 +112,10 @@ impl State for MapVote
         None
     }
 
-    fn got_tcp_packet(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>, packet: &mut Packet) -> Option<Box<dyn State>> 
+    fn got_tcp_packet(&mut self, server: &mut Server, peer: Arc<Mutex<Peer>>, packet: &mut Packet) -> Result<(), &'static str>
     {
-        let passtrough = packet.ru8() != 0;
-        let tp = packet.rpk();
+        let passtrough = packet.ru8()? != 0;
+        let tp = packet.rpk()?;
 
         debug!("Got packet {:?}", tp);
 
@@ -140,7 +139,7 @@ impl State for MapVote
                     assert_or_disconnect!(!passtrough, peer);
                 }
 
-                let map = packet.ru8();
+                let map = packet.ru8()?;
 
                 // Sanity checks
                 assert_or_disconnect!(map < 3, &mut peer.lock().unwrap());
@@ -166,7 +165,7 @@ impl State for MapVote
             }
         }
 
-        None
+        Ok(())
     }
 
     fn name(&self) -> &str { "MapVote" }

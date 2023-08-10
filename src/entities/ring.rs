@@ -11,7 +11,7 @@ pub(crate) struct Ring
 
 impl Entity for Ring
 {
-    fn spawn(&mut self, server: &mut Server, game: &mut Game, id: &u16) -> Option<Packet> 
+    fn spawn(&mut self, _server: &mut Server, game: &mut Game, id: &u16) -> Option<Packet> 
     {
         self.id = match game.rings.iter().position(|x| !x)
         {
@@ -35,12 +35,12 @@ impl Entity for Ring
         Some(packet)
     }
 
-    fn tick(&mut self, server: &mut Server, game: &mut Game, id: &u16) -> Option<Packet> 
+    fn tick(&mut self, _server: &mut Server, _game: &mut Game, _id: &u16) -> Option<Packet> 
     {
         None
     }
 
-    fn destroy(&mut self, server: &mut Server, game: &mut Game, id: &u16) -> Option<Packet> 
+    fn destroy(&mut self, _server: &mut Server, game: &mut Game, id: &u16) -> Option<Packet> 
     {
         game.rings[self.id] = false;
 

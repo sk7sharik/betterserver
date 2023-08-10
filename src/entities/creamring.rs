@@ -9,7 +9,7 @@ pub(crate) struct CreamRing
 
 impl Entity for CreamRing
 {
-    fn spawn(&mut self, server: &mut Server, game: &mut Game, id: &u16) -> Option<Packet> 
+    fn spawn(&mut self, _server: &mut Server, _game: &mut Game, id: &u16) -> Option<Packet> 
     {
         let mut packet = Packet::new(PacketType::SERVER_RING_STATE);
         packet.wu8(2);
@@ -21,12 +21,12 @@ impl Entity for CreamRing
         Some(packet)
     }
 
-    fn tick(&mut self, server: &mut Server, game: &mut Game, id: &u16) -> Option<Packet> 
+    fn tick(&mut self, _server: &mut Server, _game: &mut Game, _id: &u16) -> Option<Packet> 
     {
         None
     }
 
-    fn destroy(&mut self, server: &mut Server, game: &mut Game, id: &u16) -> Option<Packet> 
+    fn destroy(&mut self, _server: &mut Server, _game: &mut Game, id: &u16) -> Option<Packet> 
     {
         let mut packet = Packet::new(PacketType::SERVER_RING_STATE);
         packet.wu8(1);
