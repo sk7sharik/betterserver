@@ -138,8 +138,10 @@ impl Server {
                 id: _id.clone(), 
                 stream: stream_clone, 
                 addr, 
+
                 nickname: String::new(),
                 udid: String::new(),
+
                 exe_chance: thread_rng().gen_range(2..5),
                 timer: 0, 
                 lobby_icon: 0, 

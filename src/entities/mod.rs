@@ -8,5 +8,6 @@ pub mod creamring;
 pub mod blackring;
 pub mod exclone;
 
-// Maps
+// Ravine Mist
 pub mod slug;
+pub mod shard;

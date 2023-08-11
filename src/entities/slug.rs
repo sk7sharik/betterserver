@@ -26,6 +26,7 @@ pub(crate) struct Slug
 {
     pub x: i32,
     pub y: i32,
+    pub id: usize,
     pub state: SlugState,
     pub ring: SlugRing,
     pub real_x: i32

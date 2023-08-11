@@ -24,6 +24,10 @@ pub(crate) trait Map: Send + Sync
         true
     }
 
+    fn bring_spawn(&self) -> bool {
+        true
+    }
+
     fn bring_activate_time(&self) -> u16 {
        (60 - 10) * 60
     }

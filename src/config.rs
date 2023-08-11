@@ -25,7 +25,7 @@ const DEFAULT_CONFIG: Configuration = Configuration {
         tcp_port: 7606,
         udp_port: 8606,
         grow: false,
-        grow_limit: 16
+        grow_limit: 32
     },
 
     gui: true,

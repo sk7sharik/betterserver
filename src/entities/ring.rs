@@ -1,4 +1,3 @@
-use log::warn;
 use rand::{thread_rng, Rng};
 
 use crate::{entity::Entity, states::game::Game, server::Server, packet::{Packet, PacketType}};
@@ -13,16 +12,6 @@ impl Entity for Ring
 {
     fn spawn(&mut self, _server: &mut Server, game: &mut Game, id: &u16) -> Option<Packet> 
     {
-        self.id = match game.rings.iter().position(|x| !x)
-        {
-            Some(res) => res,
-            None => {
-                warn!("Couldn't find free space for a ring");
-                return None;
-            }
-        };
-        game.rings[self.id] = true;
-
         if game.map.lock().unwrap().spawn_red_rings() {
             self.red = thread_rng().gen_bool(1.0 / 10.0);
         }
@@ -40,10 +29,8 @@ impl Entity for Ring
         None
     }
 
-    fn destroy(&mut self, _server: &mut Server, game: &mut Game, id: &u16) -> Option<Packet> 
+    fn destroy(&mut self, _server: &mut Server, _game: &mut Game, id: &u16) -> Option<Packet> 
     {
-        game.rings[self.id] = false;
-
         let mut packet = Packet::new(PacketType::SERVER_RING_STATE);
         packet.wu8(1);
         packet.wu8(self.id as u8);
@@ -66,7 +53,7 @@ impl Entity for Ring
 
 impl Ring
 {
-    pub fn new() -> Ring {
-        Ring { red: false, id: 0 }
+    pub fn new(id: usize) -> Ring {
+        Ring { red: false, id }
     }
 }

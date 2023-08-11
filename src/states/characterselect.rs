@@ -126,7 +126,7 @@ impl State for CharacterSelect
             // Peer's identity
             PacketType::IDENTITY => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
-                self.handle_identity(server, peer, packet, false);
+                self.handle_identity(server, peer, packet, false)?;
             },
 
             PacketType::CLIENT_REQUEST_CHARACTER => {

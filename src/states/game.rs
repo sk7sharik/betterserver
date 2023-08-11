@@ -53,6 +53,7 @@ pub(crate) struct Game
     // Big ring
     big_ring_time: u16,
     big_ring_ready: bool,
+    big_ring_spawn: bool,
 
     // Game state
     started: bool,
@@ -62,7 +63,10 @@ pub(crate) struct Game
     // Entities
     pub entities: Arc<Mutex<HashMap<u16, Box<dyn Entity>>>>,
     entity_id: u16,
-    entity_destroy_queue: Vec<u16>
+    entity_destroy_queue: Vec<u16>,
+
+    // Player
+    pub players_pos: HashMap<u16, (f32, f32)>
 }
 
 impl State for Game
@@ -72,10 +76,15 @@ impl State for Game
         let mut packet = Packet::new(PacketType::SERVER_LOBBY_GAME_START);
         server.multicast_real(&mut packet);
 
-        self.timer = (self.map.lock().unwrap().timer(&server)) as u16;
-        self.ring_timer = (self.map.lock().unwrap().ring_time(&server)) as u16;
-        self.rings = vec![false; self.map.lock().unwrap().ring_count()];
-        self.big_ring_time = self.map.lock().unwrap().bring_activate_time();
+        {
+            let map = self.map.lock().unwrap();
+            
+            self.timer = map.timer(&server) as u16;
+            self.ring_timer = map.ring_time(&server) as u16;
+            self.rings = vec![false; map.ring_count()];
+            self.big_ring_spawn = map.bring_spawn();
+            self.big_ring_time = map.bring_activate_time();
+        }
 
         info!("Waiting for players...");
         None
@@ -112,8 +121,20 @@ impl State for Game
         }
 
         // Spawn rings
-        if self.timer % self.ring_timer == 0 {
-            self.spawn(server, Box::new(Ring::new()));
+        if self.rings.iter().any(|x| !x) && self.timer % self.ring_timer == 0 {
+            
+            // find random free spot 
+            let mut id: usize;
+            loop {
+                id = thread_rng().gen_range(0..self.rings.len());
+
+                if !self.rings.get(id).unwrap() {
+                    break;
+                }
+            }
+            
+            self.rings[id] = true;
+            self.spawn(server, Box::new(Ring::new(id)));
         }
 
         self.do_timers(server);
@@ -164,7 +185,7 @@ impl State for Game
         {
             PacketType::IDENTITY => {
                 assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
-                self.handle_identity(server, peer.clone(), packet, false);
+                self.handle_identity(server, peer.clone(), packet, false)?;
             },
 
             PacketType::CLIENT_PLAYER_DEATH_STATE => {
@@ -423,6 +444,7 @@ impl State for Game
                     packet.wu8(ring.red as u8);
                     peer.lock().unwrap().send(&mut packet);
 
+                    self.rings[ring.id] = false;
                     self.queue_destroy(entity.0);
                     break;
                 }
@@ -534,9 +556,22 @@ impl State for Game
 
         match tp {
             PacketType::CLIENT_PLAYER_DATA => {
-                if self.started { 
+                if self.started {
                     let pak = &packet.raw()[3..];
                     server.udp_multicast_except(&self.recp, &mut Packet::headless(PacketType::CLIENT_PLAYER_DATA, pak, pak.len()), addr);
+
+                    match self.players_pos.get_mut(&pid)
+                    {
+                        Some(pos) => {
+                            let _ = packet.ru16()?;
+                            pos.0 = packet.rf32()?;
+                            pos.1 = packet.rf32()?;
+                        },
+
+                        None => {
+                            return Err("Player with specified id doesn't exist");
+                        }
+                    }
                 }
             },
 
@@ -572,6 +607,7 @@ impl State for Game
                 };
 
                 self.recp.insert(pid, *addr);
+                self.players_pos.insert(pid, (0.0, 0.0));
             }
 
             if self.recp.len() >= real_peers!(server).count() {
@@ -608,6 +644,7 @@ impl Game
 
             big_ring_time: 0,
             big_ring_ready: false,
+            big_ring_spawn: false,
 
             ring_timer: 0,
             end_timer: 0,
@@ -615,7 +652,9 @@ impl Game
 
             entities: Arc::new(Mutex::new(HashMap::new())),
             entity_id: 0,
-            entity_destroy_queue: Vec::new()
+            entity_destroy_queue: Vec::new(),
+
+            players_pos: HashMap::new()
         }
     }
 
@@ -665,7 +704,7 @@ impl Game
             {
                 Some(res) => res,
                 None => {
-                    warn!("Failed to remove entity (ID{})", id);
+                    warn!("Failed to remove entity (ID {})", id);
                     return;
                 }
             };
@@ -675,7 +714,7 @@ impl Game
                 server.multicast_real(&mut packet.unwrap());
             }
 
-            info!("Destroyed entity (type {}, ID {})", entity.id(), self.entity_id);
+            info!("Destroyed entity (type {}, ID {})", entity.id(), *id);
         }
 
         if self.entity_destroy_queue.len() > 0 {
@@ -748,28 +787,31 @@ impl Game
             server.multicast_real(packet);
         }
 
-        // Spawn big ring
-        if self.timer == 60 * 60 {
-            let mut packet = Packet::new(PacketType::SERVER_GAME_SPAWN_RING);
-            packet.wu8(false as u8);
-            packet.wu8(thread_rng().gen_range(0..255));
-            server.multicast_real(&mut packet);
+        if self.big_ring_spawn {
+            // Spawn big ring
+            if self.timer == 60 * 60 {
+                let mut packet = Packet::new(PacketType::SERVER_GAME_SPAWN_RING);
+                packet.wu8(false as u8);
+                packet.wu8(thread_rng().gen_range(0..255));
+                server.multicast_real(&mut packet);
 
-            info!("Big ring spawned!");
+                info!("Big ring spawned!");
+            }
+
+            // Activate big ring
+            if self.timer == self.big_ring_time {
+                self.big_ring_ready = true;
+
+                let mut packet = Packet::new(PacketType::SERVER_GAME_SPAWN_RING);
+                packet.wu8(true as u8);
+                packet.wu8(thread_rng().gen_range(0..255));
+                server.multicast_real(&mut packet);
+
+                info!("Big ring activate!");
+            }
         }
 
-        // Activate big ring
-        if self.timer == self.big_ring_time {
-            self.big_ring_ready = true;
-
-            let mut packet = Packet::new(PacketType::SERVER_GAME_SPAWN_RING);
-            packet.wu8(true as u8);
-            packet.wu8(thread_rng().gen_range(0..255));
-            server.multicast_real(&mut packet);
-
-            info!("Big ring activate!");
-        }
-
+        // Timer sync
         if self.timer % 60 == 0 {
             let mut packet = Packet::new(PacketType::SERVER_GAME_TIME_SYNC);
             packet.wu16(self.timer);

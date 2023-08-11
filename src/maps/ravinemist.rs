@@ -1,10 +1,10 @@
-use std::sync::{Arc, Mutex};
+use std::{sync::{Arc, Mutex}, collections::HashMap};
 
-use rand::{thread_rng, Rng, seq::IteratorRandom};
+use rand::{thread_rng, Rng, seq::SliceRandom};
 
-use crate::{map::Map, states::game::{Game, find_entities}, server::{Server, Peer}, entities::slug::{Slug, SlugState, SlugRing}, packet::{Packet, PacketType}};
+use crate::{map::Map, states::game::{Game, find_entities}, server::{Server, Peer, real_peers}, entities::{slug::{Slug, SlugState, SlugRing}, shard::Shard}, packet::{Packet, PacketType}};
 
-static SLUG_SPAWNS: [(i32, i32, bool); 11] = [
+const SLUG_SPAWNS: [(i32, i32, bool); 11] = [
     (1901, 392, false),
     (2193, 392, false),
     (2468, 392, false),
@@ -18,40 +18,76 @@ static SLUG_SPAWNS: [(i32, i32, bool); 11] = [
     (915, 2004, false),
 ];
 
+const SHARD_SPAWNS: [(u16, u16); 12] = [
+    (862, 248),
+    (3078, 248),
+    (292, 558),
+    (2918, 558),
+    (1100, 820),
+    (980, 1188),
+    (1870, 1252),
+    (2180, 1508),
+    (2920, 2216),
+    (282, 2228),
+    (1318, 1916),
+    (3010, 1766)
+];
+
 pub(crate) struct RavineMist
 {
     slugs: [(i32, i32, bool); 11],
-    slug_timer: u16
+    slug_timer: u16,
+
+    shards_list: HashMap<u16, u8>
 }
 
 impl Map for RavineMist
 {
-    fn init(&mut self, _server: &mut Server, _game: &mut Game) 
+    fn init(&mut self, server: &mut Server, game: &mut Game) 
     {
         self.slug_timer = thread_rng().gen_range(2..17) * 60;
+
+        // Fill shards list
+        for peer in real_peers!(server) {
+            self.shards_list.insert(peer.lock().unwrap().id(), 0);
+        }
+
+        // Randomly shuffle and spawn shards
+        let mut spawns = SHARD_SPAWNS.clone();
+        spawns.shuffle(&mut thread_rng());
+        for point in spawns.iter().take(7) {
+            game.spawn(server, Box::new(Shard {
+                x: point.0,
+                y: point.1,
+                spawned: false
+            }));
+        }
     }
 
     fn tick(&mut self, server: &mut Server, game: &mut Game) 
     {
         self.slug_timer -= 1;
 
-        if self.slug_timer <= 0 {
-            match self.find_free()
-            {
-                Some(slug) => {
-                    game.spawn(server, Box::new(Slug { 
-                        x: slug.0,
-                        y: slug.1,
-                        state: SlugState::NoneRight,
-                        ring: SlugRing::None,
-                        real_x: 0
-                    }));
+        if self.slugs.iter().any(|x| !x.2) && self.slug_timer <= 0 {
 
-                    slug.2 = true;
-                },
+            let mut id: usize;
+            loop {
+                id = thread_rng().gen_range(0..self.slugs.len());
 
-                None => {}
+                if !self.slugs.get(id).unwrap().2 {
+                    break;
+                }
             }
+
+            self.slugs[id].2 = true;
+            game.spawn(server, Box::new(Slug {
+                real_x: 0,
+                x: self.slugs[id].0,
+                y: self.slugs[id].1,
+                id: id,
+                state: SlugState::NoneLeft,
+                ring: SlugRing::None
+            }));
 
             self.slug_timer = (15 * 60) + (thread_rng().gen_range(2..10) * 60);
         }
@@ -72,7 +108,8 @@ impl Map for RavineMist
                     }
 
                     let slug = entity.1.as_any().downcast_ref::<Slug>().unwrap();
-                    self.slugs.iter_mut().filter(|x| x.0 == slug.x && x.1 == slug.y).next().unwrap().2 = false;
+                    
+                    self.slugs[slug.id].2 = false;
                     game.queue_destroy(entity.0);
                     
                     if proj {
@@ -122,11 +159,8 @@ impl RavineMist
     pub fn new() -> RavineMist {
         RavineMist { 
             slugs: SLUG_SPAWNS.clone(),
-            slug_timer: 0 
+            slug_timer: 0,
+            shards_list: HashMap::new()
         }
-    }
-
-    fn find_free(&mut self) -> Option<&mut (i32, i32, bool)> {
-        return self.slugs.iter_mut().filter(|x| !x.2).choose(&mut thread_rng());
     }
 }

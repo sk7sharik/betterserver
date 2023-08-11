@@ -341,7 +341,7 @@ impl Packet
 
     pub fn ru16(&mut self) -> Result<u16, &'static str>
     {
-        if self.position + 2 >= self.buffer.len() {
+        if self.position + 2 > self.buffer.len() {
             return Err("Reading outside the bounds! (type: u16)");
         }
         
@@ -359,7 +359,7 @@ impl Packet
 
     pub fn ri16(&mut self) -> Result<i16, &'static str>
     {
-        if self.position + 2 >= self.buffer.len() {
+        if self.position + 2 > self.buffer.len() {
             return Err("Reading outside the bounds! (type: i16)");
         }
         
@@ -377,7 +377,7 @@ impl Packet
 
     pub fn ru32(&mut self) -> Result<u32, &'static str>
     {
-        if self.position + 4 >= self.buffer.len() {
+        if self.position + 4 > self.buffer.len() {
             return Err("Reading outside the bounds! (type: u32)");
         }
         
@@ -395,7 +395,7 @@ impl Packet
 
     pub fn ri32(&mut self) -> Result<i32, &'static str>
     {
-        if self.position + 4 >= self.buffer.len() {
+        if self.position + 4 > self.buffer.len() {
             return Err("Reading outside the bounds! (type: i32)");
         }
         
@@ -413,7 +413,7 @@ impl Packet
 
     pub fn ru64(&mut self) -> Result<u64, &'static str>
     {
-        if self.position + 8 >= self.buffer.len() {
+        if self.position + 8 > self.buffer.len() {
             return Err("Reading outside the bounds! (type: u64)");
         }
         
@@ -431,7 +431,7 @@ impl Packet
 
     pub fn ri64(&mut self) -> Result<i64, &'static str>
     {
-        if self.position + 8 >= self.buffer.len() {
+        if self.position + 8 > self.buffer.len() {
             return Err("Reading outside the bounds! (type: i64)");
         }
         
@@ -449,7 +449,7 @@ impl Packet
 
     pub fn rf32(&mut self) -> Result<f32, &'static str>
     {
-        if self.position + 4 >= self.buffer.len() {
+        if self.position + 4 > self.buffer.len() {
             return Err("Reading outside the bounds! (type: f32)");
         }
         
@@ -467,7 +467,7 @@ impl Packet
 
     pub fn rf64(&mut self) -> Result<f64, &'static str>
     {
-        if self.position + 8 >= self.buffer.len() {
+        if self.position + 8 > self.buffer.len() {
             return Err("Reading outside the bounds! (type: f64)");
         }
         
