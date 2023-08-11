@@ -51,7 +51,7 @@ impl Map for RavineMist
         for peer in real_peers!(server) {
             self.shards_list.insert(peer.lock().unwrap().id(), 0);
         }
-
+        
         // Randomly shuffle and spawn shards
         let mut spawns = SHARD_SPAWNS.clone();
         spawns.shuffle(&mut thread_rng());
