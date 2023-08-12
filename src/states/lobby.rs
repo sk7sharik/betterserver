@@ -41,6 +41,10 @@ impl State for Lobby
                 peer.exe_chance = 99;
             }
 
+            if peer.player.is_some() && peer.player.as_ref().unwrap().exe {
+                peer.exe_chance = thread_rng().gen_range(0..2);
+            }
+
             // Send new exe chance
             let mut packet = Packet::new(PacketType::SERVER_LOBBY_EXE_CHANCE);
             packet.wu8(peer.exe_chance);

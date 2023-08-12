@@ -45,12 +45,13 @@ enum Ending
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub(crate) enum GameTimer
 {
-    Time,
+    RoundTime, // Game's round time
+    RoundEnd,
 
-    TailsProjectile,
-    EggmanTracker,
-    CreamRing,
-    ExetiorRing,
+    TailsProjectile, // Tails' projectile cooldown
+    EggmanTracker, // Eggman's tracker place cooldown
+    CreamRing, // Cream's ring spawn cooldown
+    ExetiorRing, // Exetior's black ring place cooldown
 }
 
 pub(crate) struct Game
@@ -70,7 +71,6 @@ pub(crate) struct Game
     // Game state
     pub timer: Timer<GameTimer>,
     started: bool,
-    end_timer: u16,
     
     // Entities
     pub entities: Arc<Mutex<HashMap<u16, Box<dyn Entity>>>>,
@@ -91,7 +91,7 @@ impl State for Game
         {
             let map = self.map.lock().unwrap();
             
-            self.timer.set(GameTimer::Time, map.timer(&server) as u16);
+            self.timer.set(GameTimer::RoundTime, map.timer(&server) as u16);
             
             self.ring_time = map.ring_time(&server) as u16;
             self.rings = vec![false; map.ring_count()];
@@ -105,18 +105,16 @@ impl State for Game
 
     fn tick(&mut self, server: &mut Server) -> Option<Box<dyn State>> 
     {
-        if self.end_timer > 0 {
-            self.end_timer -= 1;
-
-            if self.end_timer == 0 {
-                return Some(Box::new(Lobby::new()));
-            }
-
+        if !self.started {
             return None;
         }
 
-        if !self.started {
-            return None;
+        // Timer tick
+        self.timer.tick();
+
+        // Round's end timer
+        if self.timer.get(GameTimer::RoundEnd) == 1 {
+            return Some(Box::new(Lobby::new()));
         }
 
         let map = self.map.clone();
@@ -222,7 +220,7 @@ impl State for Game
                         peer.lock().unwrap().player.as_mut().unwrap().death_timer = 30 * 60;
                     }
 
-                    if revival_times == 1 || (revival_times == 0 && self.timer.get(GameTimer::Time) <= 3600 * 2) {
+                    if revival_times == 1 || (revival_times == 0 && self.timer.get(GameTimer::RoundTime) <= 3600 * 2) {
                         let mut packet = Packet::new(PacketType::SERVER_GAME_DEATHTIMER_END);
                         
                         if demon_count < peer_count / 2 {
@@ -249,7 +247,7 @@ impl State for Game
                 // Sanity checks
                 {
                     let mut peer = peer.lock().unwrap();
-                    assert_or_disconnect!(self.timer.get(GameTimer::Time) <= self.big_ring_time, &mut peer);
+                    assert_or_disconnect!(self.timer.get(GameTimer::RoundTime) <= self.big_ring_time, &mut peer);
                     assert_or_disconnect!(!peer.player.as_ref().unwrap().exe, &mut peer);
                     assert_or_disconnect!(!peer.player.as_ref().unwrap().dead, &mut peer);
                     assert_or_disconnect!(!peer.player.as_ref().unwrap().red_ring, &mut peer);
@@ -641,7 +639,7 @@ impl State for Game
                 let mut packet = Packet::new(PacketType::SERVER_GAME_PLAYERS_READY);
                 server.multicast_real(&mut packet);
 
-                info!("Game started! (Timer is {} frames)", self.timer.get(GameTimer::Time));
+                info!("Game started! (Timer is {} frames)", self.timer.get(GameTimer::RoundTime));
             }
 
             return Ok(());
@@ -670,7 +668,6 @@ impl Game
             big_ring_spawn: false,
 
             ring_time: 0,
-            end_timer: 0,
             timer: Timer::<GameTimer>::new(),
 
             entities: Arc::new(Mutex::new(HashMap::new())),
@@ -747,7 +744,7 @@ impl Game
 
     fn do_timers(&mut self, server: &mut Server)
     {
-        let game_time = self.timer.get(GameTimer::Time);
+        let game_time = self.timer.get(GameTimer::RoundTime);
 
         // Player death timer
         let mut packets = Vec::new();
@@ -846,9 +843,6 @@ impl Game
             self.end(server, Ending::TimeOver);
             return;
         }
-
-        // Timer tick
-        self.timer.tick();
     }
 
     fn check_state(&mut self, server: &mut Server) 
@@ -917,7 +911,7 @@ impl Game
             }
         }
 
-        self.end_timer = 5 * 60;
+        self.timer.set(GameTimer::RoundEnd, 5 * 60);
     }
 
 }

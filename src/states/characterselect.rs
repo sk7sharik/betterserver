@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use log::{info, debug};
@@ -233,15 +234,25 @@ impl CharacterSelect
 
     fn choose_exe(&mut self, server: &mut Server) -> u16 
     {
-        loop {
-            for peer in real_peers!(server) {
-                let peer = peer.lock().unwrap();
-                
-                if thread_rng().gen_ratio(peer.exe_chance as u32, 100u32) {
-                    return peer.id();
-                }
-            }
+        let mut weight: u32 = 0;
+        for peer in real_peers!(server) {
+            let peer = peer.lock().unwrap();
+            
+            weight += peer.exe_chance as u32;
         }
+
+        let mut rnd = thread_rng().gen_range(0..weight);
+        for peer in real_peers!(server) {
+            let peer = peer.lock().unwrap();
+            
+            if rnd < peer.exe_chance as u32 {
+                return peer.id();
+            }
+
+            rnd -= peer.exe_chance as u32;
+        }
+
+        0u16
     }
 
     fn check_remaining(&mut self, server: &mut Server)
