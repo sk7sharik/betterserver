@@ -7,6 +7,7 @@ use log4rs::{append::{console::ConsoleAppender, file::FileAppender}, encode::pat
 use server::Server;
 
 mod config;
+mod timer;
 mod server;
 mod packet;
 mod map;

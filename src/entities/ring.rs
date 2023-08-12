@@ -50,10 +50,3 @@ impl Entity for Ring
         self
     }
 }
-
-impl Ring
-{
-    pub fn new(id: usize) -> Ring {
-        Ring { red: false, id }
-    }
-}

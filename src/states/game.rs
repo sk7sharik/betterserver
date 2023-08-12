@@ -15,8 +15,9 @@ use crate::entities::tailsprojectile::TailsProjectile;
 use crate::map::Map;
 use crate::packet::{Packet, PacketType};
 use crate::state::State;
-use crate::server::{Server, Peer, real_peers, assert_or_disconnect, SurvivorCharacter, PlayerRevival};
+use crate::server::{Server, Peer, real_peers, assert_or_disconnect, SurvivorCharacter, PlayerRevival, ExeCharacter};
 use crate::entity::Entity;
+use crate::timer::Timer;
 
 use super::lobby::Lobby;
 
@@ -41,6 +42,17 @@ enum Ending
     TimeOver
 }
 
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub(crate) enum GameTimer
+{
+    Time,
+
+    TailsProjectile,
+    EggmanTracker,
+    CreamRing,
+    ExetiorRing,
+}
+
 pub(crate) struct Game
 {
     pub map: Arc<Mutex<dyn Map>>,
@@ -48,7 +60,7 @@ pub(crate) struct Game
 
     // Rings
     pub rings: Vec<bool>,
-    ring_timer: u16,
+    ring_time: u16,
 
     // Big ring
     big_ring_time: u16,
@@ -56,8 +68,8 @@ pub(crate) struct Game
     big_ring_spawn: bool,
 
     // Game state
+    pub timer: Timer<GameTimer>,
     started: bool,
-    pub timer: u16,
     end_timer: u16,
     
     // Entities
@@ -79,8 +91,9 @@ impl State for Game
         {
             let map = self.map.lock().unwrap();
             
-            self.timer = map.timer(&server) as u16;
-            self.ring_timer = map.ring_time(&server) as u16;
+            self.timer.set(GameTimer::Time, map.timer(&server) as u16);
+            
+            self.ring_time = map.ring_time(&server) as u16;
             self.rings = vec![false; map.ring_count()];
             self.big_ring_spawn = map.bring_spawn();
             self.big_ring_time = map.bring_activate_time();
@@ -118,23 +131,6 @@ impl State for Game
             if packet.is_some() {
                 server.udp_multicast(&self.recp,&mut packet.unwrap());
             }
-        }
-
-        // Spawn rings
-        if self.rings.iter().any(|x| !x) && self.timer % self.ring_timer == 0 {
-            
-            // find random free spot 
-            let mut id: usize;
-            loop {
-                id = thread_rng().gen_range(0..self.rings.len());
-
-                if !self.rings.get(id).unwrap() {
-                    break;
-                }
-            }
-            
-            self.rings[id] = true;
-            self.spawn(server, Box::new(Ring::new(id)));
         }
 
         self.do_timers(server);
@@ -226,7 +222,7 @@ impl State for Game
                         peer.lock().unwrap().player.as_mut().unwrap().death_timer = 30 * 60;
                     }
 
-                    if revival_times == 1 || (revival_times == 0 && self.timer <= 3600 * 2) {
+                    if revival_times == 1 || (revival_times == 0 && self.timer.get(GameTimer::Time) <= 3600 * 2) {
                         let mut packet = Packet::new(PacketType::SERVER_GAME_DEATHTIMER_END);
                         
                         if demon_count < peer_count / 2 {
@@ -253,7 +249,7 @@ impl State for Game
                 // Sanity checks
                 {
                     let mut peer = peer.lock().unwrap();
-                    assert_or_disconnect!(self.timer <= self.big_ring_time, &mut peer);
+                    assert_or_disconnect!(self.timer.get(GameTimer::Time) <= self.big_ring_time, &mut peer);
                     assert_or_disconnect!(!peer.player.as_ref().unwrap().exe, &mut peer);
                     assert_or_disconnect!(!peer.player.as_ref().unwrap().dead, &mut peer);
                     assert_or_disconnect!(!peer.player.as_ref().unwrap().red_ring, &mut peer);
@@ -335,10 +331,12 @@ impl State for Game
 
             // Spawn projectile
             PacketType::CLIENT_TPROJECTILE => {
-                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
-                if find_entities!(self.entities.lock().unwrap(), "tproj").count() > 0 {
-                    peer.lock().unwrap().disconnect("Projectile abusing.");
-                    return Ok(());
+                {
+                    let mut peer = peer.lock().unwrap();
+                    assert_or_disconnect!(!passtrough, peer);
+                    assert_or_disconnect!(peer.player.as_ref().unwrap().ch1 == SurvivorCharacter::Tails, peer);
+                    assert_or_disconnect!(self.timer.get(GameTimer::TailsProjectile) == 0, peer);
+                    assert_or_disconnect!(find_entities!(self.entities.lock().unwrap(), "tproj").count() == 0, peer);
                 }
 
                 self.spawn(server, Box::new(TailsProjectile {
@@ -351,6 +349,8 @@ impl State for Game
                     charge: packet.ru8()?,
                     timer: 5 * 60
                 }));
+                
+                self.timer.set(GameTimer::TailsProjectile, 10 * 60);
             },
 
             // Destroy projectile
@@ -361,12 +361,20 @@ impl State for Game
             },
 
             PacketType::CLIENT_ETRACKER => {
-                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+                {
+                    let mut peer = peer.lock().unwrap();
+                    assert_or_disconnect!(!passtrough, peer);
+                    assert_or_disconnect!(peer.player.as_ref().unwrap().ch1 == SurvivorCharacter::Eggman, peer);
+                    assert_or_disconnect!(self.timer.get(GameTimer::EggmanTracker) == 0, peer);
+                }
+
                 self.spawn(server, Box::new(EggmanTracker {
                     x: packet.ru16()?,
                     y: packet.ru16()?,
                     activated_by: 0
                 }));
+
+                self.timer.set(GameTimer::TailsProjectile, 10 * 60);
             },
 
             PacketType::CLIENT_ETRACKER_ACTIVATED => {
@@ -386,7 +394,12 @@ impl State for Game
             },
 
             PacketType::CLIENT_CREAM_SPAWN_RINGS => {
-                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+                {
+                    let mut peer = peer.lock().unwrap();
+                    assert_or_disconnect!(!passtrough, peer);
+                    assert_or_disconnect!(peer.player.as_ref().unwrap().ch1 == SurvivorCharacter::Cream, peer);
+                    assert_or_disconnect!(self.timer.get(GameTimer::CreamRing) == 0, peer);
+                }
 
                 let x = packet.ru16()?;
                 let y = packet.ru16()?;
@@ -425,6 +438,8 @@ impl State for Game
                         }));
                     }
                 }
+
+                self.timer.set(GameTimer::CreamRing, 10 * 60);
             },
 
             PacketType::CLIENT_RING_COLLECTED => {
@@ -469,7 +484,13 @@ impl State for Game
             },
 
             PacketType::CLIENT_ERECTOR_BRING_SPAWN => {
-                assert_or_disconnect!(!passtrough, &mut peer.lock().unwrap());
+                {
+                    let mut peer = peer.lock().unwrap();
+                    assert_or_disconnect!(!passtrough, peer);
+                    assert_or_disconnect!(peer.player.as_ref().unwrap().ch2 == ExeCharacter::Exetior, peer);
+                    assert_or_disconnect!(self.timer.get(GameTimer::ExetiorRing) == 0, peer);
+                }
+
                 let x = packet.ru16()?;
                 let y = packet.ru16()?;
                 let rid = self.spawn_quiet(server, Box::new(BlackRing {}));
@@ -479,6 +500,8 @@ impl State for Game
                 packet.wu16(x);
                 packet.wu16(y);
                 server.multicast_real(&mut packet);
+
+                self.timer.set(GameTimer::ExetiorRing, 10 * 60);
             },
 
             PacketType::CLIENT_BRING_COLLECTED => {
@@ -618,7 +641,7 @@ impl State for Game
                 let mut packet = Packet::new(PacketType::SERVER_GAME_PLAYERS_READY);
                 server.multicast_real(&mut packet);
 
-                info!("Game started! (Timer is {} frames)", self.timer);
+                info!("Game started! (Timer is {} frames)", self.timer.get(GameTimer::Time));
             }
 
             return Ok(());
@@ -646,9 +669,9 @@ impl Game
             big_ring_ready: false,
             big_ring_spawn: false,
 
-            ring_timer: 0,
+            ring_time: 0,
             end_timer: 0,
-            timer: 0,
+            timer: Timer::<GameTimer>::new(),
 
             entities: Arc::new(Mutex::new(HashMap::new())),
             entity_id: 0,
@@ -724,8 +747,7 @@ impl Game
 
     fn do_timers(&mut self, server: &mut Server)
     {
-        // Timer tick
-        self.timer -= 1;
+        let game_time = self.timer.get(GameTimer::Time);
 
         // Player death timer
         let mut packets = Vec::new();
@@ -752,7 +774,7 @@ impl Game
             if death_timer > 0 {
                 death_timer -= 1;
 
-                if self.timer <= 3600 * 2 {
+                if game_time <= 3600 * 2 {
                     death_timer = 0;
                 }
 
@@ -789,7 +811,7 @@ impl Game
 
         if self.big_ring_spawn {
             // Spawn big ring
-            if self.timer == 60 * 60 {
+            if game_time == 60 * 60 {
                 let mut packet = Packet::new(PacketType::SERVER_GAME_SPAWN_RING);
                 packet.wu8(false as u8);
                 packet.wu8(thread_rng().gen_range(0..255));
@@ -799,7 +821,7 @@ impl Game
             }
 
             // Activate big ring
-            if self.timer == self.big_ring_time {
+            if game_time == self.big_ring_time {
                 self.big_ring_ready = true;
 
                 let mut packet = Packet::new(PacketType::SERVER_GAME_SPAWN_RING);
@@ -812,17 +834,21 @@ impl Game
         }
 
         // Timer sync
-        if self.timer % 60 == 0 {
+        if game_time % 60 == 0 {
             let mut packet = Packet::new(PacketType::SERVER_GAME_TIME_SYNC);
-            packet.wu16(self.timer);
+            packet.wu16(game_time);
             server.multicast(&mut packet);
             debug!("Timer tick");
         }
 
         // Time over
-        if self.timer <= 0 {
+        if game_time <= 0 {
             self.end(server, Ending::TimeOver);
+            return;
         }
+
+        // Timer tick
+        self.timer.tick();
     }
 
     fn check_state(&mut self, server: &mut Server) 

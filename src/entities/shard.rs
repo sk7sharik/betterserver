@@ -1,5 +1,3 @@
-use rand::{thread_rng, Rng};
-
 use crate::{entity::Entity, states::game::Game, server::Server, packet::{Packet, PacketType}};
 
 pub(crate) struct Shard
@@ -26,7 +24,7 @@ impl Entity for Shard
         None
     }
 
-    fn destroy(&mut self, _server: &mut Server, _game: &mut Game, id: &u16) -> Option<Packet> 
+    fn destroy(&mut self, _server: &mut Server, _game: &mut Game, _id: &u16) -> Option<Packet> 
     {
         None
     }
