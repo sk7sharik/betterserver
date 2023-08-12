@@ -718,6 +718,10 @@ impl Game
 
     fn entity_check_destroy(&mut self, server: &mut Server)
     {
+        if self.entity_destroy_queue.len() <= 0 {
+            return;
+        }
+
         for id in &self.entity_destroy_queue.clone()
         {
             let mut entity = match self.entities.lock().unwrap().remove(&id)
@@ -737,9 +741,7 @@ impl Game
             info!("Destroyed entity (type {}, ID {})", entity.id(), *id);
         }
 
-        if self.entity_destroy_queue.len() > 0 {
-            self.entity_destroy_queue.clear();
-        }
+        self.entity_destroy_queue.clear();
     }
 
     fn do_timers(&mut self, server: &mut Server)
